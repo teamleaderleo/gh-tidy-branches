@@ -48,6 +48,8 @@ jobs:
       - name: Install through GitHub CLI and verify command surface
         env:
           GH_CONFIG_DIR: ${{ runner.temp }}/gh-config
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: "1"
         run: |
           gh --version
           gh extension install .
