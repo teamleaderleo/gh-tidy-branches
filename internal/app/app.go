@@ -1,9 +1,7 @@
 package app
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/teamleaderleo/gh-tidy-branches/internal/config"
 	"github.com/teamleaderleo/gh-tidy-branches/internal/githubapi"
+	"github.com/teamleaderleo/gh-tidy-branches/internal/receipt"
 	"github.com/teamleaderleo/gh-tidy-branches/internal/scan"
 )
 
@@ -32,10 +31,14 @@ type Options struct {
 }
 
 type Output struct {
-	SchemaVersion string             `json:"schema_version"`
-	Results       []scan.Result      `json:"results"`
-	ApplyResults  []scan.ApplyResult `json:"apply_results,omitempty"`
-	Errors        []RepositoryError  `json:"errors,omitempty"`
+	SchemaVersion       string                 `json:"schema_version"`
+	ElapsedMilliseconds int64                  `json:"elapsed_ms"`
+	CandidateCount      int                    `json:"candidate_count"`
+	Results             []scan.Result          `json:"results"`
+	ApplyResults        []scan.ApplyResult     `json:"apply_results,omitempty"`
+	Errors              []RepositoryError      `json:"errors,omitempty"`
+	RequestStats        githubapi.RequestStats `json:"request_stats"`
+	UndoReceipt         string                 `json:"undo_receipt,omitempty"`
 }
 
 type RepositoryError struct {
@@ -49,7 +52,9 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		case "config":
 			return runConfig(args[1:], stdout)
 		case "doctor":
-			return runDoctor(ctx, stdout)
+			return runDoctor(ctx, args[1:], stdout)
+		case "undo":
+			return runUndo(ctx, args[1:], stdin, stdout, stderr)
 		case "help", "--help", "-h":
 			printHelp(stdout)
 			return nil
@@ -59,31 +64,34 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 	}
 
+	started := time.Now()
 	options, err := parse(args)
 	if err != nil {
 		return err
 	}
-
 	client, err := githubapi.NewFromEnvironment(ctx)
 	if err != nil {
 		return err
 	}
-
 	repositories, err := selectRepositories(ctx, options)
 	if err != nil {
 		return err
 	}
 
-	results, repositoryErrors := scanRepositories(ctx, client, repositories, options.Jobs)
-	output := Output{
-		SchemaVersion: "tidy-branches.output.v1",
-		Results:       results,
-		Errors:        repositoryErrors,
+	progress := io.Discard
+	if !options.JSON {
+		progress = stderr
 	}
-
-	candidateCount := 0
-	for _, result := range results {
-		candidateCount += len(result.Candidates)
+	fmt.Fprintf(progress, "Scanning %d repository(s) with up to %d concurrent worker(s)...\n", len(repositories), options.Jobs)
+	results, repositoryErrors := scanRepositories(ctx, client, repositories, options.Jobs, progress)
+	candidateCount := countCandidates(results)
+	output := Output{
+		SchemaVersion:       "tidy-branches.output.v1",
+		ElapsedMilliseconds: time.Since(started).Milliseconds(),
+		CandidateCount:      candidateCount,
+		Results:             results,
+		Errors:              repositoryErrors,
+		RequestStats:        client.SnapshotStats(),
 	}
 
 	if options.JSON && !options.Yes {
@@ -92,42 +100,34 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return errorIfRepositoryFailures(repositoryErrors)
 	}
-
 	if !options.JSON {
-		printResults(stdout, results, repositoryErrors)
+		printPreview(stdout, results, repositoryErrors, output.ElapsedMilliseconds, output.RequestStats)
 	}
-
 	if candidateCount == 0 {
 		if options.JSON {
 			if err := writeJSON(stdout, output); err != nil {
 				return err
 			}
-			return errorIfRepositoryFailures(repositoryErrors)
 		}
-		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "Everything is tidy.")
+		if !options.JSON {
+			fmt.Fprintln(stdout, "\nEverything is tidy.")
+		}
 		return errorIfRepositoryFailures(repositoryErrors)
 	}
-
 	if options.DryRun {
 		if options.JSON {
 			return writeJSON(stdout, output)
 		}
-		fmt.Fprintln(stdout)
-		fmt.Fprintf(stdout, "Dry run: %d branch(es) eligible.\n", candidateCount)
+		fmt.Fprintf(stdout, "\nPreview only: %d branch(es) eligible. No changes made.\n", candidateCount)
 		return errorIfRepositoryFailures(repositoryErrors)
 	}
-
 	if !options.Yes {
-		fmt.Fprintln(stdout)
-		fmt.Fprintf(stdout, "Delete %d eligible branch(es)? [y/N] ", candidateCount)
-		answer, err := bufio.NewReader(stdin).ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("read confirmation: %w", err)
+		fmt.Fprintf(stdout, "\nDelete these %d remote branch(es)? [y/N] ", candidateCount)
+		confirmed, err := readConfirmation(stdin)
+		if err != nil {
+			return err
 		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "y", "yes":
-		default:
+		if !confirmed {
 			fmt.Fprintln(stdout, "Cancelled.")
 			return errorIfRepositoryFailures(repositoryErrors)
 		}
@@ -140,17 +140,26 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		repositoryResults, err := scan.Apply(ctx, client, result.Repository, result.Candidates, options.DeleteDelay)
 		if err != nil {
-			repositoryErrors = append(repositoryErrors, RepositoryError{
-				Repository: result.Repository,
-				Error:      err.Error(),
-			})
+			repositoryErrors = append(repositoryErrors, RepositoryError{Repository: result.Repository, Error: err.Error()})
 			continue
 		}
 		applied = append(applied, repositoryResults...)
 	}
-
 	output.ApplyResults = applied
 	output.Errors = repositoryErrors
+	output.RequestStats = client.SnapshotStats()
+	deletedEntries := receiptEntries(applied)
+	if len(deletedEntries) > 0 {
+		path, receiptErr := receipt.Write(deletedEntries)
+		if receiptErr != nil {
+			fmt.Fprintf(stderr, "WARNING: branches were deleted but the undo receipt could not be saved: %v\n", receiptErr)
+			repositoryErrors = append(repositoryErrors, RepositoryError{Repository: "undo-receipt", Error: receiptErr.Error()})
+			output.Errors = repositoryErrors
+		} else {
+			output.UndoReceipt = path
+		}
+	}
+	output.ElapsedMilliseconds = time.Since(started).Milliseconds()
 
 	if options.JSON {
 		if err := writeJSON(stdout, output); err != nil {
@@ -158,31 +167,23 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return errorIfRepositoryFailures(repositoryErrors)
 	}
-
-	fmt.Fprintln(stdout)
-	for _, result := range applied {
-		fmt.Fprintf(stdout, "%-8s %-36s %s", strings.ToUpper(string(result.Status)), result.Candidate.Repository, result.Candidate.Branch)
-		if result.Reason != "" {
-			fmt.Fprintf(stdout, ": %s", result.Reason)
-		}
-		fmt.Fprintln(stdout)
+	printApplyResults(stdout, applied)
+	if output.UndoReceipt != "" {
+		fmt.Fprintf(stdout, "\nUndo receipt: %s\n", output.UndoReceipt)
+		fmt.Fprintln(stdout, "Restore the deleted branches with: gh tidy-branches undo")
 	}
-
+	fmt.Fprintf(stdout, "Completed in %s. API requests: %d; retries: %d.\n", formatDuration(time.Duration(output.ElapsedMilliseconds)*time.Millisecond), output.RequestStats.Requests, output.RequestStats.Retries)
 	return errorIfRepositoryFailures(repositoryErrors)
 }
 
 func parse(args []string) (Options, error) {
-	options := Options{
-		Jobs:        2,
-		DeleteDelay: time.Second,
-	}
-
+	options := Options{Jobs: 2, DeleteDelay: time.Second}
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
 		case arg == "--all":
 			options.All = true
-		case arg == "--dry-run" || arg == "-n":
+		case arg == "--dry-run" || arg == "--preview" || arg == "-n":
 			options.DryRun = true
 		case arg == "--yes" || arg == "-y":
 			options.Yes = true
@@ -193,15 +194,15 @@ func parse(args []string) (Options, error) {
 			if index >= len(args) {
 				return Options{}, errors.New("--jobs requires a value")
 			}
-			value, err := strconv.Atoi(args[index])
-			if err != nil || value < 1 || value > 16 {
-				return Options{}, errors.New("--jobs must be between 1 and 16")
+			value, err := parseJobs(args[index])
+			if err != nil {
+				return Options{}, err
 			}
 			options.Jobs = value
 		case strings.HasPrefix(arg, "--jobs="):
-			value, err := strconv.Atoi(strings.TrimPrefix(arg, "--jobs="))
-			if err != nil || value < 1 || value > 16 {
-				return Options{}, errors.New("--jobs must be between 1 and 16")
+			value, err := parseJobs(strings.TrimPrefix(arg, "--jobs="))
+			if err != nil {
+				return Options{}, err
 			}
 			options.Jobs = value
 		case arg == "--delete-delay":
@@ -209,15 +210,15 @@ func parse(args []string) (Options, error) {
 			if index >= len(args) {
 				return Options{}, errors.New("--delete-delay requires a duration")
 			}
-			value, err := time.ParseDuration(args[index])
-			if err != nil || value < 0 {
-				return Options{}, errors.New("--delete-delay must be a non-negative duration")
+			value, err := parseDelay(args[index])
+			if err != nil {
+				return Options{}, err
 			}
 			options.DeleteDelay = value
 		case strings.HasPrefix(arg, "--delete-delay="):
-			value, err := time.ParseDuration(strings.TrimPrefix(arg, "--delete-delay="))
-			if err != nil || value < 0 {
-				return Options{}, errors.New("--delete-delay must be a non-negative duration")
+			value, err := parseDelay(strings.TrimPrefix(arg, "--delete-delay="))
+			if err != nil {
+				return Options{}, err
 			}
 			options.DeleteDelay = value
 		case strings.HasPrefix(arg, "-"):
@@ -226,12 +227,27 @@ func parse(args []string) (Options, error) {
 			options.Repositories = append(options.Repositories, arg)
 		}
 	}
-
 	options.Repositories = unique(options.Repositories)
 	if options.DryRun && options.Yes {
-		return Options{}, errors.New("--dry-run and --yes cannot be used together")
+		return Options{}, errors.New("--preview/--dry-run and --yes cannot be used together")
 	}
 	return options, nil
+}
+
+func parseJobs(value string) (int, error) {
+	jobs, err := strconv.Atoi(value)
+	if err != nil || jobs < 1 || jobs > 16 {
+		return 0, errors.New("--jobs must be between 1 and 16")
+	}
+	return jobs, nil
+}
+
+func parseDelay(value string) (time.Duration, error) {
+	delay, err := time.ParseDuration(value)
+	if err != nil || delay < 0 {
+		return 0, errors.New("--delete-delay must be a non-negative duration")
+	}
+	return delay, nil
 }
 
 func selectRepositories(ctx context.Context, options Options) ([]string, error) {
@@ -248,11 +264,9 @@ func selectRepositories(ctx context.Context, options Options) ([]string, error) 
 		}
 		return repositories, nil
 	}
-
 	if current, err := currentRepository(ctx); err == nil && current != "" {
 		return []string{current}, nil
 	}
-
 	repositories, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -272,17 +286,16 @@ func currentRepository(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func scanRepositories(ctx context.Context, client *githubapi.Client, repositories []string, jobs int) ([]scan.Result, []RepositoryError) {
+func scanRepositories(ctx context.Context, client *githubapi.Client, repositories []string, jobs int, progress io.Writer) ([]scan.Result, []RepositoryError) {
 	type indexedResult struct {
 		index  int
 		result scan.Result
 		err    error
 	}
-
 	semaphore := make(chan struct{}, jobs)
 	channel := make(chan indexedResult, len(repositories))
 	var wg sync.WaitGroup
-
+	var progressMu sync.Mutex
 	for index, repository := range repositories {
 		wg.Add(1)
 		go func(index int, repository string) {
@@ -294,135 +307,33 @@ func scanRepositories(ctx context.Context, client *githubapi.Client, repositorie
 				channel <- indexedResult{index: index, err: ctx.Err()}
 				return
 			}
-
 			result, err := scan.Repository(ctx, client, repository)
+			progressMu.Lock()
+			if err != nil {
+				fmt.Fprintf(progress, "  x %s: %v\n", repository, err)
+			} else {
+				fmt.Fprintf(progress, "  ✓ %s: %d eligible in %s\n", repository, len(result.Candidates), formatDuration(time.Duration(result.ElapsedMilliseconds)*time.Millisecond))
+			}
+			progressMu.Unlock()
 			channel <- indexedResult{index: index, result: result, err: err}
 		}(index, repository)
 	}
-
 	wg.Wait()
 	close(channel)
-
 	ordered := make([]indexedResult, len(repositories))
 	for item := range channel {
 		ordered[item.index] = item
 	}
-
 	results := make([]scan.Result, 0, len(repositories))
 	var repositoryErrors []RepositoryError
 	for index, item := range ordered {
 		if item.err != nil {
-			repositoryErrors = append(repositoryErrors, RepositoryError{
-				Repository: repositories[index],
-				Error:      item.err.Error(),
-			})
+			repositoryErrors = append(repositoryErrors, RepositoryError{Repository: repositories[index], Error: item.err.Error()})
 			continue
 		}
 		results = append(results, item.result)
 	}
 	return results, repositoryErrors
-}
-
-func printResults(writer io.Writer, results []scan.Result, repositoryErrors []RepositoryError) {
-	for _, result := range results {
-		fmt.Fprintln(writer)
-		fmt.Fprintf(writer, "%s: %d branch(es), %d open PR(s), %d eligible\n",
-			result.Repository,
-			result.BranchCount,
-			result.OpenPRCount,
-			len(result.Candidates),
-		)
-		for _, candidate := range result.Candidates {
-			fmt.Fprintf(writer, "  %-44s PR #%-6d merged %s\n",
-				candidate.Branch,
-				candidate.PullRequest,
-				candidate.MergedAt.Format("2006-01-02"),
-			)
-		}
-	}
-	for _, repositoryError := range repositoryErrors {
-		fmt.Fprintln(writer)
-		fmt.Fprintf(writer, "%s: ERROR: %s\n", repositoryError.Repository, repositoryError.Error)
-	}
-}
-
-func writeJSON(writer io.Writer, output Output) error {
-	encoder := json.NewEncoder(writer)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(output)
-}
-
-func runConfig(args []string, stdout io.Writer) error {
-	if len(args) == 0 || args[0] == "list" {
-		repositories, err := config.Load()
-		if err != nil {
-			return err
-		}
-		for _, repository := range repositories {
-			fmt.Fprintln(stdout, repository)
-		}
-		return nil
-	}
-	if len(args) != 2 {
-		return errors.New("usage: gh tidy-branches config add|remove owner/repo")
-	}
-	switch args[0] {
-	case "add":
-		if err := config.Add(args[1]); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Added %s\n", args[1])
-		return nil
-	case "remove":
-		if err := config.Remove(args[1]); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Removed %s\n", args[1])
-		return nil
-	default:
-		return errors.New("usage: gh tidy-branches config add|remove|list")
-	}
-}
-
-func runDoctor(ctx context.Context, stdout io.Writer) error {
-	client, err := githubapi.NewFromEnvironment(ctx)
-	if err != nil {
-		return err
-	}
-	configPath, err := config.Path()
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintf(stdout, "Version: %s\n", Version)
-	fmt.Fprintf(stdout, "Host: %s\n", client.Host)
-	fmt.Fprintf(stdout, "API: %s\n", client.BaseURL)
-	fmt.Fprintf(stdout, "Config: %s\n", configPath)
-	if repository, err := currentRepository(ctx); err == nil {
-		fmt.Fprintf(stdout, "Current repository: %s\n", repository)
-	} else {
-		fmt.Fprintln(stdout, "Current repository: none")
-	}
-	return nil
-}
-
-func printHelp(writer io.Writer) {
-	fmt.Fprintln(writer, `Tidy Branches safely removes remote branches whose pull requests merged.
-
-Usage:
-  gh tidy-branches [flags] [owner/repo ...]
-  gh tidy-branches config add owner/repo
-  gh tidy-branches config remove owner/repo
-  gh tidy-branches config list
-  gh tidy-branches doctor
-
-Flags:
-  --all                 scan configured repositories
-  -n, --dry-run         display eligible branches without deleting
-  -y, --yes             delete eligible branches without prompting
-  --jobs N              concurrent repository scans, default 2
-  --json                machine-readable output
-  --delete-delay 1s     delay between successful delete requests`)
 }
 
 func errorIfRepositoryFailures(repositoryErrors []RepositoryError) error {
