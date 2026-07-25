@@ -46,6 +46,7 @@ func runConfig(args []string, stdout io.Writer) error {
 }
 
 func runDoctor(ctx context.Context, args []string, stdout io.Writer) error {
+	style := newTerminalStyle(stdout)
 	client, err := githubapi.NewFromEnvironment(ctx)
 	if err != nil {
 		return err
@@ -63,20 +64,23 @@ func runDoctor(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	current, _ := currentRepository(ctx)
-	fmt.Fprintf(stdout, "Version: %s\n", Version)
-	fmt.Fprintf(stdout, "Authentication: OK\nHost: %s\nAPI: %s\n", client.Host, client.BaseURL)
-	fmt.Fprintf(stdout, "Config: %s (%d repositories)\n", configPath, len(configured))
+
+	fmt.Fprintln(stdout, style.bold("Tidy Branches doctor"))
+	fmt.Fprintf(stdout, "%s Authentication  %s\n", style.green("✓"), style.dim(client.Host))
+	fmt.Fprintf(stdout, "  Version          %s\n", Version)
+	fmt.Fprintf(stdout, "  API              %s\n", client.BaseURL)
+	fmt.Fprintf(stdout, "  Config           %s (%d repositories)\n", configPath, len(configured))
 	if current == "" {
-		fmt.Fprintln(stdout, "Current repository: none")
+		fmt.Fprintf(stdout, "  Current repo     %s\n", style.dim("none"))
 	} else {
-		fmt.Fprintf(stdout, "Current repository: %s\n", current)
+		fmt.Fprintf(stdout, "  Current repo     %s\n", current)
 	}
 	if stored, _, loadErr := receipt.Load(); loadErr == nil {
-		fmt.Fprintf(stdout, "Undo receipt: %s (%d branches)\n", receiptPath, len(stored.Entries))
+		fmt.Fprintf(stdout, "  Undo receipt     %s (%d branches)\n", receiptPath, len(stored.Entries))
 	} else if errors.Is(loadErr, os.ErrNotExist) {
-		fmt.Fprintf(stdout, "Undo receipt: none (%s)\n", receiptPath)
+		fmt.Fprintf(stdout, "  Undo receipt     %s\n", style.dim("none"))
 	} else {
-		fmt.Fprintf(stdout, "Undo receipt: ERROR: %v\n", loadErr)
+		fmt.Fprintf(stdout, "  Undo receipt     %s\n", style.red(loadErr.Error()))
 	}
 
 	repositories := unique(args)
@@ -89,7 +93,7 @@ func runDoctor(ctx context.Context, args []string, stdout io.Writer) error {
 	for _, repositoryName := range repositories {
 		repository, repoErr := client.GetRepository(ctx, repositoryName)
 		if repoErr != nil {
-			fmt.Fprintf(stdout, "\n%s: ERROR: %v\n", repositoryName, repoErr)
+			fmt.Fprintf(stdout, "\n%s %s\n  %s\n", style.red("✗"), style.cyan(repositoryName), repoErr)
 			continue
 		}
 		access := "read"
@@ -98,21 +102,25 @@ func runDoctor(ctx context.Context, args []string, stdout io.Writer) error {
 		} else if repository.Permissions.Push {
 			access = "write"
 		}
-		autoDelete := "disabled"
+
+		fmt.Fprintf(stdout, "\n%s %s\n", style.green("✓"), style.cyan(repository.FullName))
+		fmt.Fprintf(stdout, "  Access           %s\n", access)
+		fmt.Fprintf(stdout, "  Default branch   %s\n", repository.DefaultBranch)
+		fmt.Fprintf(stdout, "  Archived         %t\n", repository.Archived)
 		if repository.DeleteBranchOnMerge {
-			autoDelete = "enabled"
-		}
-		fmt.Fprintf(stdout, "\n%s\n  Access: %s\n  Default branch: %s\n  Archived: %t\n  Delete head branches after merge: %s\n", repository.FullName, access, repository.DefaultBranch, repository.Archived, autoDelete)
-		if !repository.DeleteBranchOnMerge && repository.Permissions.Admin {
-			fmt.Fprintf(stdout, "  Recommendation: gh repo edit %s --delete-branch-on-merge\n", repository.FullName)
+			fmt.Fprintf(stdout, "  Auto-delete      %s\n", style.green("enabled"))
+		} else {
+			fmt.Fprintf(stdout, "  Auto-delete      %s\n", style.yellow("disabled"))
+			if repository.Permissions.Admin {
+				fmt.Fprintf(stdout, "  Tip              gh repo edit %s --delete-branch-on-merge\n", repository.FullName)
+			}
 		}
 	}
 	stats := client.SnapshotStats()
-	fmt.Fprintf(stdout, "\nAPI requests: %d; retries: %d", stats.Requests, stats.Retries)
+	fmt.Fprintf(stdout, "\n%s\n", style.dim(fmt.Sprintf("API requests: %d · retries: %d", stats.Requests, stats.Retries)))
 	if !stats.RateLimitReset.IsZero() {
-		fmt.Fprintf(stdout, "; rate limit remaining: %d (resets %s)", stats.RateLimitRemaining, stats.RateLimitReset.Local().Format(time.RFC3339))
+		fmt.Fprintf(stdout, "%s\n", style.dim(fmt.Sprintf("Rate limit remaining: %d · resets %s", stats.RateLimitRemaining, stats.RateLimitReset.Local().Format(time.RFC3339))))
 	}
-	fmt.Fprintln(stdout)
 	return nil
 }
 
@@ -136,6 +144,7 @@ Flags:
   --json                machine-readable output
   --delete-delay 1s     delay between delete requests
 
+Colour is enabled automatically for terminals. Set NO_COLOR=1 to disable it.
 After a successful deletion, gh tidy-branches undo can recreate branches at their
 recorded SHAs when the names are still available and GitHub retains the commits.`)
 }
