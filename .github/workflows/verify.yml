@@ -25,4 +25,47 @@ jobs:
       - run: git diff --exit-code
       - run: go test -race ./...
       - run: go vet ./...
-      - run: go build ./cmd/gh-tidy-branches
+      - name: Build and smoke test
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags=-X=main.version=ci -o dist/gh-tidy-branches ./cmd/gh-tidy-branches
+          test "$(./dist/gh-tidy-branches --version)" = "ci"
+          ./dist/gh-tidy-branches --help >/dev/null
+
+  cross-build:
+    name: cross-build (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            extension: ""
+          - goos: linux
+            goarch: arm64
+            extension: ""
+          - goos: darwin
+            goarch: amd64
+            extension: ""
+          - goos: darwin
+            goarch: arm64
+            extension: ""
+          - goos: windows
+            goarch: amd64
+            extension: ".exe"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Cross-compile
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          output="dist/gh-tidy-branches_${GOOS}-${GOARCH}${{ matrix.extension }}"
+          go build -trimpath -ldflags=-X=main.version=ci -o "$output" ./cmd/gh-tidy-branches
+          test -f "$output"
