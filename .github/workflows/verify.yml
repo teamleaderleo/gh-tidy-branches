@@ -28,8 +28,8 @@ jobs:
       - name: Build and smoke test
         run: |
           mkdir -p dist
-          go build -trimpath -o dist/gh-tidy-branches ./cmd/gh-tidy-branches
-          ./dist/gh-tidy-branches --version
+          go build -trimpath -ldflags=-X=main.version=ci -o dist/gh-tidy-branches ./cmd/gh-tidy-branches
+          test "$(./dist/gh-tidy-branches --version)" = "ci"
           ./dist/gh-tidy-branches --help >/dev/null
 
   cross-build:
@@ -67,5 +67,5 @@ jobs:
         run: |
           mkdir -p dist
           output="dist/gh-tidy-branches_${GOOS}-${GOARCH}${{ matrix.extension }}"
-          go build -trimpath -o "$output" ./cmd/gh-tidy-branches
+          go build -trimpath -ldflags=-X=main.version=ci -o "$output" ./cmd/gh-tidy-branches
           test -f "$output"
