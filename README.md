@@ -123,6 +123,7 @@ Immediately before deletion, Tidy Branches refreshes open pull requests and re-r
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Security model](docs/SECURITY.md)
+- [Release runbook](docs/RELEASING.md)
 
 ## License
 
