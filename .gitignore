@@ -1,0 +1,4 @@
+gh-tidy-branches
+dist/
+coverage.out
+.DS_Store
