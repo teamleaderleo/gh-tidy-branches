@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -92,5 +93,97 @@ func pull(number int, head, sha, base, headRepo string, mergedAt *time.Time) git
 	value.Head.Repo = &struct {
 		FullName string `json:"full_name"`
 	}{FullName: headRepo}
+	return value
+}
+
+func TestApplyRevalidatesDefaultProtectedOpenAndAdvancedBranches(t *testing.T) {
+	api := &fakeAPI{
+		repository: githubapi.Repository{FullName: "owner/repo", DefaultBranch: "new-default"},
+		branches: map[string]githubapi.Branch{
+			"protected": protectedBranch("protected", "protected-sha"),
+			"open":      branch("open", "open-sha"),
+			"advanced":  branch("advanced", "new-sha"),
+			"delete":    branch("delete", "delete-sha"),
+		},
+		openPRs: []githubapi.PullRequest{
+			pull(9, "open", "open-sha", "main", "owner/repo", nil),
+		},
+	}
+
+	mergedAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	candidates := []Candidate{
+		{Repository: "owner/repo", Branch: "new-default", HeadSHA: "default-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "protected", HeadSHA: "protected-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "open", HeadSHA: "open-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "advanced", HeadSHA: "old-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "delete", HeadSHA: "delete-sha", MergedAt: mergedAt},
+	}
+
+	results, err := Apply(context.Background(), api, "owner/repo", candidates, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != len(candidates) {
+		t.Fatalf("expected %d results, got %d", len(candidates), len(results))
+	}
+	if len(api.deleted) != 1 || api.deleted[0] != "delete" {
+		t.Fatalf("unexpected deleted branches: %#v", api.deleted)
+	}
+	if results[0].Reason != "branch is now the default branch" {
+		t.Fatalf("unexpected default-branch result: %#v", results[0])
+	}
+	if results[1].Reason != "branch is now protected" {
+		t.Fatalf("unexpected protected result: %#v", results[1])
+	}
+	if results[2].Reason != "branch is now used by an open pull request" {
+		t.Fatalf("unexpected open-PR result: %#v", results[2])
+	}
+	if results[3].Reason != "branch advanced after scan" {
+		t.Fatalf("unexpected advanced result: %#v", results[3])
+	}
+	if results[4].Status != StatusDeleted {
+		t.Fatalf("expected deleted status, got %#v", results[4])
+	}
+}
+
+type fakeAPI struct {
+	repository githubapi.Repository
+	branches   map[string]githubapi.Branch
+	openPRs    []githubapi.PullRequest
+	deleted    []string
+}
+
+func (f *fakeAPI) GetRepository(_ context.Context, _ string) (githubapi.Repository, error) {
+	return f.repository, nil
+}
+
+func (f *fakeAPI) ListBranches(_ context.Context, _ string) ([]githubapi.Branch, error) {
+	return nil, nil
+}
+
+func (f *fakeAPI) GetBranch(_ context.Context, _ string, branchName string) (githubapi.Branch, error) {
+	value, ok := f.branches[branchName]
+	if !ok {
+		return githubapi.Branch{}, &githubapi.APIError{StatusCode: 404, Method: "GET", URL: branchName}
+	}
+	return value, nil
+}
+
+func (f *fakeAPI) ListOpenPullRequests(_ context.Context, _ string) ([]githubapi.PullRequest, error) {
+	return f.openPRs, nil
+}
+
+func (f *fakeAPI) ListClosedPullRequests(_ context.Context, _, _ string) ([]githubapi.PullRequest, error) {
+	return nil, nil
+}
+
+func (f *fakeAPI) DeleteBranch(_ context.Context, _ string, branchName string) error {
+	f.deleted = append(f.deleted, branchName)
+	return nil
+}
+
+func protectedBranch(name, sha string) githubapi.Branch {
+	value := branch(name, sha)
+	value.Protected = true
 	return value
 }
