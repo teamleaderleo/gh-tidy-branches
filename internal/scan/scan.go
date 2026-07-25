@@ -166,6 +166,10 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 }
 
 func Apply(ctx context.Context, api API, repository string, candidates []Candidate, delay time.Duration) ([]ApplyResult, error) {
+	repositoryState, err := api.GetRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
 	openPRs, err := api.ListOpenPullRequests(ctx, repository)
 	if err != nil {
 		return nil, err
@@ -173,7 +177,7 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 	protected := openProtection(repository, openPRs)
 
 	results := make([]ApplyResult, 0, len(candidates))
-	successfulDeletes := 0
+	deleteAttempts := 0
 
 	for _, candidate := range candidates {
 		if candidate.Repository != repository {
@@ -185,6 +189,15 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 			continue
 		}
 
+		if candidate.Branch == repositoryState.DefaultBranch {
+			results = append(results, ApplyResult{
+				Candidate: candidate,
+				Status:    StatusSkipped,
+				Reason:    "branch is now the default branch",
+			})
+			continue
+		}
+
 		if _, exists := protected[candidate.Branch]; exists {
 			results = append(results, ApplyResult{
 				Candidate: candidate,
@@ -192,6 +205,14 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 				Reason:    "branch is now used by an open pull request",
 			})
 			continue
+		}
+
+		if deleteAttempts > 0 && delay > 0 {
+			select {
+			case <-ctx.Done():
+				return results, ctx.Err()
+			case <-time.After(delay):
+			}
 		}
 
 		branch, err := api.GetBranch(ctx, repository, candidate.Branch)
@@ -213,6 +234,15 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 			continue
 		}
 
+		if branch.Protected {
+			results = append(results, ApplyResult{
+				Candidate: candidate,
+				Status:    StatusSkipped,
+				Reason:    "branch is now protected",
+			})
+			continue
+		}
+
 		if branch.SHA() != candidate.HeadSHA {
 			results = append(results, ApplyResult{
 				Candidate: candidate,
@@ -222,14 +252,7 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 			continue
 		}
 
-		if successfulDeletes > 0 && delay > 0 {
-			select {
-			case <-ctx.Done():
-				return results, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
+		deleteAttempts++
 		if err := api.DeleteBranch(ctx, repository, candidate.Branch); err != nil {
 			results = append(results, ApplyResult{
 				Candidate: candidate,
@@ -239,7 +262,6 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 			continue
 		}
 
-		successfulDeletes++
 		results = append(results, ApplyResult{
 			Candidate: candidate,
 			Status:    StatusDeleted,
