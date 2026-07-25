@@ -2,7 +2,7 @@
 
 Tidy Branches finds remote GitHub branches whose pull requests have already merged, proves that each branch still points to the exact merged pull request head, then lets you delete the eligible set.
 
-The intended command is:
+The command is:
 
 ```console
 gh tidy-branches
@@ -16,7 +16,7 @@ Tidy Branches uses GitHub pull request records and current remote refs. It can s
 
 ## Current status
 
-The initial Go implementation is under active development. It already includes:
+The repository has the required `gh-` prefix and the initial Go implementation is under active development. It already includes:
 
 - bulk paginated branch and pull request reads
 - bounded cross-repository concurrency
@@ -28,7 +28,24 @@ The initial Go implementation is under active development. It already includes:
 - repository configuration commands
 - GitHub.com and GitHub Enterprise host support through `gh` authentication
 
-Before the first public extension release, this repository must be renamed from `Tidy-Branches` to `gh-tidy-branches`. GitHub CLI extension repositories are required to begin with `gh-`.
+The next release milestone is the first cross-platform prerelease and end-to-end installation test.
+
+## Install
+
+After the first release is published:
+
+```console
+gh extension install teamleaderleo/gh-tidy-branches
+```
+
+Then verify the installation:
+
+```console
+gh tidy-branches doctor
+gh tidy-branches --help
+```
+
+Until then, build and run the development binary directly.
 
 ## Build
 
