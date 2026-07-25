@@ -30,7 +30,33 @@ jobs:
           mkdir -p dist
           go build -trimpath -ldflags=-X=main.version=ci -o dist/gh-tidy-branches ./cmd/gh-tidy-branches
           test "$(./dist/gh-tidy-branches --version)" = "ci"
-          ./dist/gh-tidy-branches --help >/dev/null
+          help="$(./dist/gh-tidy-branches --help)"
+          grep -F -- '--preview' <<<"$help"
+          grep -F -- 'gh tidy-branches undo' <<<"$help"
+          grep -F -- 'gh tidy-branches doctor [owner/repo ...]' <<<"$help"
+
+  extension-install:
+    name: local extension install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build root extension executable
+        run: make build VERSION=ci-extension
+      - name: Install through GitHub CLI and verify command surface
+        env:
+          GH_CONFIG_DIR: ${{ runner.temp }}/gh-config
+        run: |
+          gh --version
+          gh extension install .
+          test "$(gh tidy-branches --version)" = "ci-extension"
+          help="$(gh tidy-branches --help)"
+          grep -F -- '--preview' <<<"$help"
+          grep -F -- 'gh tidy-branches undo' <<<"$help"
+          grep -F -- 'gh tidy-branches doctor [owner/repo ...]' <<<"$help"
+          gh extension remove tidy-branches
 
   cross-build:
     name: cross-build (${{ matrix.goos }}-${{ matrix.goarch }})
