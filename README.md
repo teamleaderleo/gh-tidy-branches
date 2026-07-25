@@ -49,18 +49,35 @@ gh tidy-branches doctor
 gh tidy-branches --help
 ```
 
-Until then, build and run the development binary directly.
+Until then, install a verified development build from a local clone.
 
-## Build
+## Build and test
 
 Requirements:
 
 - Go 1.23 or newer
 - GitHub CLI authenticated with `gh auth login`
 
+Run the complete local verification suite:
+
 ```console
-go test ./...
-go build -o gh-tidy-branches ./cmd/gh-tidy-branches
+make verify
+```
+
+That runs formatting checks, race-enabled tests, vet, a production-style build, and CLI command-surface smoke tests.
+
+Install or refresh the local GitHub CLI extension with one command:
+
+```console
+make install-dev
+```
+
+`make install-dev` always rebuilds the root extension executable before reinstalling it, then verifies the installed version and command surface. This avoids accidentally running a stale binary after pulling new source code.
+
+Remove the development installation with:
+
+```console
+make uninstall-dev
 ```
 
 ## Run during development
@@ -68,22 +85,22 @@ go build -o gh-tidy-branches ./cmd/gh-tidy-branches
 Preview without mutation:
 
 ```console
-./gh-tidy-branches --preview teamleaderleo/smolrunner
-./gh-tidy-branches --preview teamleaderleo/glossless
+gh tidy-branches --preview teamleaderleo/smolrunner
+gh tidy-branches --preview teamleaderleo/glossless
 ```
 
 Inside a Git repository, omit the repository argument:
 
 ```console
-./gh-tidy-branches --preview
+gh tidy-branches --preview
 ```
 
 Outside a Git repository, the command reads configured repositories:
 
 ```console
-./gh-tidy-branches config add teamleaderleo/smolrunner
-./gh-tidy-branches config add teamleaderleo/glossless
-./gh-tidy-branches --all --preview
+gh tidy-branches config add teamleaderleo/smolrunner
+gh tidy-branches config add teamleaderleo/glossless
+gh tidy-branches --all --preview
 ```
 
 ## Commands
