@@ -1,0 +1,143 @@
+name: live branch lifecycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_repository:
+        description: Dedicated owner/repo used only for live Tidy Branches tests
+        required: true
+        default: teamleaderleo/gh-tidy-branches-fixtures
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-branch-lifecycle-${{ inputs.fixture_repository }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build extension
+        run: go build -trimpath -ldflags=-X=main.version=live-integration -o gh-tidy-branches ./cmd/gh-tidy-branches
+      - name: Create, merge, delete, undo, and clean up a real branch
+        env:
+          GH_TOKEN: ${{ secrets.TIDY_BRANCHES_LIVE_TOKEN }}
+          FIXTURE_REPOSITORY: ${{ inputs.fixture_repository }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Add a fine-grained TIDY_BRANCHES_LIVE_TOKEN secret with Contents and Pull requests read/write access to the fixture repository."
+            exit 1
+          fi
+
+          binary="$GITHUB_WORKSPACE/gh-tidy-branches"
+          repo="$FIXTURE_REPOSITORY"
+          run_key="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          branch="test/tidy-branches-${run_key}"
+          fixture_file=".tidy-branches-live/${run_key}.txt"
+          checkout_dir="$RUNNER_TEMP/tidy-branches-fixture"
+          pr_number=""
+          default_branch=""
+          merged="false"
+
+          cleanup() {
+            set +e
+            if [[ -n "$pr_number" && "$merged" != "true" ]]; then
+              gh pr close "$pr_number" --repo "$repo" >/dev/null 2>&1 || true
+            fi
+
+            encoded_branch="$(jq -rn --arg value "$branch" '$value|@uri')"
+            gh api --method DELETE "repos/$repo/git/refs/heads/$encoded_branch" >/dev/null 2>&1 || true
+
+            if [[ "$merged" == "true" && -n "$default_branch" && -d "$checkout_dir/.git" ]]; then
+              git -C "$checkout_dir" fetch origin "$default_branch" >/dev/null 2>&1 || true
+              git -C "$checkout_dir" switch --force-create "$default_branch" "origin/$default_branch" >/dev/null 2>&1 || true
+              if [[ -f "$checkout_dir/$fixture_file" ]]; then
+                git -C "$checkout_dir" rm "$fixture_file" >/dev/null 2>&1 || true
+                git -C "$checkout_dir" commit -m "test: clean live fixture ${run_key}" >/dev/null 2>&1 || true
+                git -C "$checkout_dir" push origin "$default_branch" >/dev/null 2>&1 || true
+              fi
+            fi
+          }
+          trap cleanup EXIT
+
+          auto_delete="$(gh api "repos/$repo" --jq '.delete_branch_on_merge')"
+          if [[ "$auto_delete" == "true" ]]; then
+            echo "::error::$repo has automatic head-branch deletion enabled. Disable it for the dedicated fixture repository so the extension can observe the merged branch."
+            exit 1
+          fi
+
+          default_branch="$(gh api "repos/$repo" --jq '.default_branch')"
+          gh auth setup-git
+          gh repo clone "$repo" "$checkout_dir"
+          git -C "$checkout_dir" config user.name "Tidy Branches live test"
+          git -C "$checkout_dir" config user.email "actions@users.noreply.github.com"
+          git -C "$checkout_dir" switch --create "$branch" "origin/$default_branch"
+          mkdir -p "$checkout_dir/$(dirname "$fixture_file")"
+          printf 'live integration fixture %s\n' "$run_key" > "$checkout_dir/$fixture_file"
+          git -C "$checkout_dir" add "$fixture_file"
+          git -C "$checkout_dir" commit -m "test: add live fixture ${run_key}"
+          head_sha="$(git -C "$checkout_dir" rev-parse HEAD)"
+          git -C "$checkout_dir" push --set-upstream origin "$branch"
+
+          pr_url="$(gh pr create \
+            --repo "$repo" \
+            --base "$default_branch" \
+            --head "$branch" \
+            --title "test: Tidy Branches live fixture ${run_key}" \
+            --body "Automated fixture PR for the Tidy Branches create → merge → delete → undo lifecycle test.")"
+          pr_number="${pr_url##*/}"
+          gh pr merge "$pr_number" --repo "$repo" --squash
+          merged="true"
+
+          preview_json="$RUNNER_TEMP/preview.json"
+          found="false"
+          for attempt in {1..12}; do
+            "$binary" --preview --json "$repo" > "$preview_json"
+            if jq -e --arg branch "$branch" --arg sha "$head_sha" '
+              any(.results[].candidates[]; .branch == $branch and .head_sha == $sha)
+            ' "$preview_json" >/dev/null; then
+              found="true"
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$found" != "true" ]]; then
+            echo "::error::Merged branch did not appear in the deletion preview"
+            cat "$preview_json"
+            exit 1
+          fi
+
+          apply_json="$RUNNER_TEMP/apply.json"
+          "$binary" --yes --json "$repo" > "$apply_json"
+          jq -e --arg branch "$branch" '
+            any(.apply_results[]; .candidate.branch == $branch and .status == "deleted")
+          ' "$apply_json"
+
+          encoded_branch="$(jq -rn --arg value "$branch" '$value|@uri')"
+          if gh api "repos/$repo/git/ref/heads/$encoded_branch" >/dev/null 2>&1; then
+            echo "::error::Expected $branch to be deleted"
+            exit 1
+          fi
+
+          undo_json="$RUNNER_TEMP/undo.json"
+          "$binary" undo --yes --json > "$undo_json"
+          jq -e --arg branch "$branch" '
+            any(.results[]; .candidate.branch == $branch and (.status == "restored" or .status == "already_present"))
+          ' "$undo_json"
+
+          restored_sha="$(gh api "repos/$repo/git/ref/heads/$encoded_branch" --jq '.object.sha')"
+          if [[ "$restored_sha" != "$head_sha" ]]; then
+            echo "::error::Undo restored $branch at $restored_sha instead of $head_sha"
+            exit 1
+          fi
+
+          echo "Live lifecycle passed for $repo:$branch at $head_sha"

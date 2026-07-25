@@ -28,11 +28,12 @@ The repository has the required `gh-` prefix and the initial Go implementation i
 - bounded retries for safe read requests and rate-limit-aware backoff
 - request counts, retry counts, and scan timings
 - an atomic local undo receipt and `gh tidy-branches undo`
-- text and JSON output
+- terminal-aware colour with readable plain-text and JSON output
 - repository configuration and expanded `doctor` diagnostics
 - GitHub.com and GitHub Enterprise host support through `gh` authentication
+- deterministic tests, installed-extension tests, and an on-demand live GitHub lifecycle workflow
 
-The next release milestone is the first cross-platform prerelease and end-to-end installation test.
+The next release milestone is the first cross-platform prerelease and published-install validation.
 
 ## Install
 
@@ -64,7 +65,7 @@ Run the complete local verification suite:
 make verify
 ```
 
-That runs formatting checks, race-enabled tests, vet, a production-style build, and CLI command-surface smoke tests.
+That runs formatting checks, race-enabled tests, vet, a production-style build, CLI command-surface smoke tests, and terminal presentation tests.
 
 Install or refresh the local GitHub CLI extension with one command:
 
@@ -102,6 +103,23 @@ gh tidy-branches config add teamleaderleo/smolrunner
 gh tidy-branches config add teamleaderleo/glossless
 gh tidy-branches --all --preview
 ```
+
+## Terminal experience
+
+Interactive output is designed to make the safe path obvious:
+
+```text
+Deletion preview
+Every branch below matches the exact head SHA of a merged pull request.
+
+! teamleaderleo/example
+  42 branches · 2 open PRs · 3 eligible
+  DELETE  feat/finished-work   PR #123   merged 2026-07-20   abc123def4
+```
+
+Colour is enabled automatically only when output is connected to a terminal. Redirected output stays plain text. Set `NO_COLOR=1` or `CLICOLOR=0` to disable colour explicitly.
+
+`--json` never contains colour codes, spinners, or presentation-only text.
 
 ## Commands
 
@@ -159,12 +177,17 @@ A branch is eligible only when all of these are true:
 
 Immediately before deletion, Tidy Branches refreshes open pull requests and re-reads the branch ref. Deletion requests remain serial and are never automatically retried.
 
+## Testing
+
+The ordinary CI suite is deterministic and runs on every pull request. A separate manual workflow exercises a real GitHub branch from creation through merge, preview, deletion, undo, and cleanup in a dedicated fixture repository. See [Testing](docs/TESTING.md) for setup and safety boundaries.
+
 ## Documentation
 
 - [Product brief](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Security model](docs/SECURITY.md)
+- [Testing](docs/TESTING.md)
 - [Release runbook](docs/RELEASING.md)
 
 ## License

@@ -38,6 +38,7 @@ func runUndo(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	if err != nil {
 		return err
 	}
+	style := newTerminalStyle(stdout)
 	stored, path, err := receipt.Load()
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("no undo receipt found at %s", path)
@@ -50,10 +51,11 @@ func runUndo(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		candidates = append(candidates, scan.RestoreCandidate{Repository: entry.Repository, Branch: entry.Branch, SHA: entry.SHA})
 	}
 	if !jsonOutput {
-		fmt.Fprintf(stdout, "Undo preview from %s\n", path)
-		fmt.Fprintln(stdout, "Branches are recreated only when the name is still free. Existing different SHAs are never overwritten.")
+		fmt.Fprintln(stdout, style.bold("Undo preview"))
+		fmt.Fprintf(stdout, "%s\n", style.dim("Branches are recreated only when the name is free. Existing different SHAs are never overwritten."))
+		fmt.Fprintf(stdout, "%s\n", style.dim("Receipt: "+path))
 		for _, candidate := range candidates {
-			fmt.Fprintf(stdout, "  [restore] %-36s %-38s SHA %s\n", candidate.Repository, candidate.Branch, shortSHA(candidate.SHA))
+			fmt.Fprintf(stdout, "  %s  %-36s  %-38s  %s\n", style.cyan("RESTORE"), candidate.Repository, candidate.Branch, style.dim(shortSHA(candidate.SHA)))
 		}
 	}
 	if !yes {
@@ -87,17 +89,26 @@ func runUndo(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	if jsonOutput {
 		return writeJSON(stdout, output)
 	}
-	fmt.Fprintln(stdout, "\nUndo results")
-	fmt.Fprintln(stdout, "============")
+	fmt.Fprintln(stdout, "\n"+style.bold("Undo results"))
 	for _, result := range results {
-		fmt.Fprintf(stdout, "%-15s %-36s %s", strings.ToUpper(string(result.Status)), result.Candidate.Repository, result.Candidate.Branch)
+		icon := style.yellow("↷")
+		status := style.yellow(strings.ToLower(string(result.Status)))
+		switch result.Status {
+		case scan.StatusRestored, scan.StatusAlreadyPresent:
+			icon = style.green("✓")
+			status = style.green(strings.ToLower(string(result.Status)))
+		case scan.StatusRestoreFailed:
+			icon = style.red("✗")
+			status = style.red(strings.ToLower(string(result.Status)))
+		}
+		fmt.Fprintf(stdout, "%s %-15s %s %s", icon, status, style.cyan(result.Candidate.Repository), result.Candidate.Branch)
 		if result.Reason != "" {
-			fmt.Fprintf(stdout, ": %s", result.Reason)
+			fmt.Fprintf(stdout, "\n  %s", style.dim(result.Reason))
 		}
 		fmt.Fprintln(stdout)
 	}
 	if len(remaining) == 0 {
-		fmt.Fprintln(stdout, "Undo receipt cleared.")
+		fmt.Fprintln(stdout, style.green("✓ Undo receipt cleared."))
 	} else {
 		fmt.Fprintf(stderr, "%d item(s) remain in the undo receipt because they could not be safely restored.\n", len(remaining))
 	}
