@@ -87,7 +87,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 
 	if options.JSON && !options.Yes {
-		return writeJSON(stdout, output)
+		if err := writeJSON(stdout, output); err != nil {
+			return err
+		}
+		return errorIfRepositoryFailures(repositoryErrors)
 	}
 
 	if !options.JSON {
@@ -96,7 +99,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 
 	if candidateCount == 0 {
 		if options.JSON {
-			return writeJSON(stdout, output)
+			if err := writeJSON(stdout, output); err != nil {
+				return err
+			}
+			return errorIfRepositoryFailures(repositoryErrors)
 		}
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Everything is tidy.")
@@ -147,7 +153,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	output.Errors = repositoryErrors
 
 	if options.JSON {
-		return writeJSON(stdout, output)
+		if err := writeJSON(stdout, output); err != nil {
+			return err
+		}
+		return errorIfRepositoryFailures(repositoryErrors)
 	}
 
 	fmt.Fprintln(stdout)
