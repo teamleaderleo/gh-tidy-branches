@@ -99,10 +99,22 @@ jobs:
           merged="true"
 
           preview_json="$RUNNER_TEMP/preview.json"
-          "$binary" --preview --json "$repo" > "$preview_json"
-          jq -e --arg branch "$branch" --arg sha "$head_sha" '
-            any(.results[].candidates[]; .branch == $branch and .head_sha == $sha)
-          ' "$preview_json"
+          found="false"
+          for attempt in {1..12}; do
+            "$binary" --preview --json "$repo" > "$preview_json"
+            if jq -e --arg branch "$branch" --arg sha "$head_sha" '
+              any(.results[].candidates[]; .branch == $branch and .head_sha == $sha)
+            ' "$preview_json" >/dev/null; then
+              found="true"
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$found" != "true" ]]; then
+            echo "::error::Merged branch did not appear in the deletion preview"
+            cat "$preview_json"
+            exit 1
+          fi
 
           apply_json="$RUNNER_TEMP/apply.json"
           "$binary" --yes --json "$repo" > "$apply_json"
@@ -119,7 +131,7 @@ jobs:
           undo_json="$RUNNER_TEMP/undo.json"
           "$binary" undo --yes --json > "$undo_json"
           jq -e --arg branch "$branch" '
-            any(.results[]; .entry.branch == $branch and (.status == "restored" or .status == "already_restored"))
+            any(.results[]; .candidate.branch == $branch and (.status == "restored" or .status == "already_present"))
           ' "$undo_json"
 
           restored_sha="$(gh api "repos/$repo/git/ref/heads/$encoded_branch" --jq '.object.sha')"
