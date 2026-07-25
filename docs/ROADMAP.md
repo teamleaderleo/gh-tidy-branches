@@ -6,10 +6,13 @@
 - [ ] add the `gh-extension` repository topic
 - [x] merge the initial Go scanner
 - [x] verify representative Linux, macOS, and Windows builds in CI
+- [x] test source installation through `gh extension install .`
 - [x] add rate-limit-aware retries for safe read requests
 - [x] add recorded HTTP fixtures and an N+1 request regression ceiling
 - [x] add detailed previews, scan timing, and request diagnostics
+- [x] add terminal-aware colour with plain redirected and JSON output
 - [x] add a conservative exact-SHA undo receipt and restore command
+- [x] add an on-demand live create → merge → delete → undo workflow for a dedicated fixture repository
 - [ ] publish a prerelease with cross-compiled assets
 - [ ] test installation through `gh extension install teamleaderleo/gh-tidy-branches`
 
