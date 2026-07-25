@@ -6,9 +6,15 @@ import (
 )
 
 type Repository struct {
-	FullName      string `json:"full_name"`
-	DefaultBranch string `json:"default_branch"`
-	Archived      bool   `json:"archived"`
+	FullName            string `json:"full_name"`
+	DefaultBranch       string `json:"default_branch"`
+	Archived            bool   `json:"archived"`
+	DeleteBranchOnMerge bool   `json:"delete_branch_on_merge"`
+	Permissions         struct {
+		Admin bool `json:"admin"`
+		Push  bool `json:"push"`
+		Pull  bool `json:"pull"`
+	} `json:"permissions"`
 }
 
 type Branch struct {
@@ -19,9 +25,7 @@ type Branch struct {
 	} `json:"commit"`
 }
 
-func (b Branch) SHA() string {
-	return b.Commit.SHA
-}
+func (b Branch) SHA() string { return b.Commit.SHA }
 
 type PullRequest struct {
 	Number   int        `json:"number"`
@@ -64,6 +68,16 @@ func statusText(code int) string {
 		return "409 Conflict"
 	case 422:
 		return "422 Unprocessable Entity"
+	case 429:
+		return "429 Too Many Requests"
+	case 500:
+		return "500 Internal Server Error"
+	case 502:
+		return "502 Bad Gateway"
+	case 503:
+		return "503 Service Unavailable"
+	case 504:
+		return "504 Gateway Timeout"
 	default:
 		return strconv.Itoa(code)
 	}

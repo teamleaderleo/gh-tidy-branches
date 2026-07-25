@@ -5,7 +5,11 @@
 - [x] rename the repository to `gh-tidy-branches`
 - [ ] add the `gh-extension` repository topic
 - [x] merge the initial Go scanner
-- [ ] verify Linux, macOS, and Windows release binaries
+- [x] verify representative Linux, macOS, and Windows builds in CI
+- [x] add rate-limit-aware retries for safe read requests
+- [x] add recorded HTTP fixtures and an N+1 request regression ceiling
+- [x] add detailed previews, scan timing, and request diagnostics
+- [x] add a conservative exact-SHA undo receipt and restore command
 - [ ] publish a prerelease with cross-compiled assets
 - [ ] test installation through `gh extension install teamleaderleo/gh-tidy-branches`
 
@@ -16,16 +20,15 @@
 - clearer skipped-reason reporting
 - `--repo` and repeated repository selection ergonomics
 - release notes and compatibility table
-- end-to-end tests against recorded HTTP fixtures
-- rate-limit and retry handling
+- broader end-to-end API fixtures
 - terminal progress that remains quiet in JSON mode
+- explicit command for enabling GitHub's automatic head-branch deletion setting
 
 ## P2: repeated-use performance
 
 - ETag conditional-request cache
 - cache inspection and clearing commands
 - adaptive pagination diagnostics
-- repository scan timing output
 - configurable repository groups
 - shell completion
 
@@ -36,7 +39,6 @@
 - branch allowlists and deny rules
 - protected-branch and ruleset explanations
 - audit log export
-- optional check for GitHub's automatic head-branch deletion setting
 
 These branches should remain review-only until a separate safety model is proven.
 
@@ -47,6 +49,7 @@ These branches should remain review-only until a separate safety model is proven
 - per-branch evidence panel
 - selected apply flow
 - Cursor-compatible command palette integration
+- editor-native preview and undo actions backed by the CLI
 
 ## Explicit non-goals for the first release
 
