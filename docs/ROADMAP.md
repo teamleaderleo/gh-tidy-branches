@@ -2,12 +2,12 @@
 
 ## P0: publishable foundation
 
-- rename the repository to `gh-tidy-branches`
-- add the `gh-extension` repository topic
-- merge the initial Go scanner
-- verify Linux, macOS, and Windows builds
-- publish a prerelease with cross-compiled assets
-- test installation through `gh extension install teamleaderleo/gh-tidy-branches`
+- [x] rename the repository to `gh-tidy-branches`
+- [ ] add the `gh-extension` repository topic
+- [x] merge the initial Go scanner
+- [ ] verify Linux, macOS, and Windows release binaries
+- [ ] publish a prerelease with cross-compiled assets
+- [ ] test installation through `gh extension install teamleaderleo/gh-tidy-branches`
 
 ## P1: first stable release
 
