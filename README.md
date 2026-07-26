@@ -15,7 +15,7 @@ Tidy Branches uses GitHub's pull request records and current remote refs, so it 
 ## Install the release candidate
 
 ```console
-gh extension install teamleaderleo/gh-tidy-branches --pin v0.1.0-rc.2
+gh extension install teamleaderleo/gh-tidy-branches --pin v0.1.0-rc.3
 ```
 
 Check the installed version and your GitHub access:
@@ -157,7 +157,7 @@ make install-dev
 
 `make install-dev` rebuilds the repository-root executable before reinstalling the extension, then verifies the installed version and command surface. This prevents a stale local binary from surviving a source update.
 
-The test suite includes deterministic scanner and API fixtures, an installed-extension test, terminal presentation tests, cross-platform builds, a release-packaging smoke test, and an on-demand live GitHub workflow that creates, merges, deletes, restores, and cleans up a real test branch.
+The test suite includes deterministic scanner and API fixtures, an installed-extension test, terminal presentation tests, cross-platform builds, a release-packaging smoke test that enforces GitHub CLI's asset naming convention, and an on-demand live GitHub workflow that creates, merges, deletes, restores, and cleans up a real test branch.
 
 ## Documentation
 
@@ -167,7 +167,7 @@ The test suite includes deterministic scanner and API fixtures, an installed-ext
 - [Security model](docs/SECURITY.md)
 - [Testing](docs/TESTING.md)
 - [Release runbook](docs/RELEASING.md)
-- [Release candidate notes](docs/RELEASE_NOTES_v0.1.0-rc.2.md)
+- [Release candidate notes](docs/RELEASE_NOTES_v0.1.0-rc.3.md)
 
 ## License
 

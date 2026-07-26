@@ -2,6 +2,7 @@
 set -euo pipefail
 
 version="${1:?usage: script/build-release.sh VERSION}"
+asset_prefix="gh-tidy-branches-"
 platforms=(
   darwin-amd64
   darwin-arm64
@@ -25,7 +26,7 @@ for platform in "${platforms[@]}"; do
     extension=".exe"
   fi
 
-  output="dist/${platform}${extension}"
+  output="dist/${asset_prefix}${platform}${extension}"
   echo "Building ${output}"
   GOOS="$goos" \
     GOARCH="$goarch" \
