@@ -21,7 +21,11 @@ The `local extension install` job builds the repository-root executable, install
 
 ## 3. Release-packaging test on every pull request
 
-The verify job runs `script/build-release.sh` for one representative platform, checks that it creates the exact `dist/<os>-<arch>` asset name expected by `cli/gh-extension-precompile`, and verifies that the supplied release version is embedded in the binary.
+The verify job runs `script/build-release.sh` for one representative platform and verifies all three release-facing properties:
+
+- the asset is named `gh-tidy-branches-<os>-<arch>` as required by GitHub CLI
+- no unprefixed alternative asset is produced
+- the supplied release version is embedded in the binary
 
 The cross-build matrix separately compiles every supported release target:
 
@@ -31,7 +35,7 @@ The cross-build matrix separately compiles every supported release target:
 - macOS arm64
 - Windows amd64
 
-This layer exists because successful application cross-builds do not by themselves prove that the release action receives valid arguments or creates correctly named assets.
+This layer exists because successful application cross-builds do not by themselves prove that the release action creates assets that `gh extension install` can recognise.
 
 ## 4. Live branch lifecycle test on demand
 
