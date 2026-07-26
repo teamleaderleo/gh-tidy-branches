@@ -2,9 +2,9 @@
 
 ## Product
 
-**Tidy Branches** is a GitHub-aware remote branch cleanup tool.
+**Tidy Branches** is a GitHub CLI extension for safely cleaning up remote branches after their pull requests merge.
 
-Canonical repository after rename:
+Canonical repository:
 
 ```text
 teamleaderleo/gh-tidy-branches
@@ -18,54 +18,62 @@ gh tidy-branches
 
 ## Problem
 
-Repositories with frequent agent-created work accumulate large numbers of remote branches. GitHub's automatic deletion setting helps only with future merges. Local Git cleanup tools do not reliably understand squash merges, rebase merges, cross-repository pull requests, reused branch names, or a fleet of repositories that may not be cloned locally.
+Repositories accumulate short-lived remote branches faster than people clean them up. GitHub's automatic deletion setting helps with future merges, but it does not remove an existing backlog. Local Git cleanup commands also have incomplete information about squash merges, rebase merges, forks, reused branch names, and repositories that are not cloned locally.
 
-The cleanup task is simple in intent and surprisingly easy to make unsafe.
+The intent is simple—remove finished branch refs—but the evidence required to do that safely is not.
 
 ## First-release promise
 
-Tidy Branches identifies a narrow, defensible set:
+Tidy Branches identifies a deliberately narrow candidate set:
 
-> Same-repository branches whose pull requests merged directly into the default branch, whose current remote tips still equal the exact pull request head SHAs recorded at merge time, and which are not involved in any open pull request.
+> Same-repository branches whose pull requests merged directly into the current default branch, whose remote tips still equal the exact pull request head SHAs recorded at merge time, and which are not protected or involved in an open pull request.
 
-The user reviews the full set before mutation unless `--yes` is supplied.
+The user sees the complete candidate set before mutation unless `--yes` is supplied. Every candidate is revalidated immediately before deletion.
 
 ## Users
 
 - developers with many short-lived feature branches
-- maintainers with agent-heavy repositories
-- people operating several personal repositories
-- coding agents that need JSON output and deterministic safety rules
-- future editor integrations that need a reusable scan engine
+- maintainers cleaning up an existing branch backlog
+- people operating several personal or team repositories
+- coding agents that need deterministic safety rules and machine-readable output
+- future editor integrations that need one reusable scan and apply engine
 
 ## Product principles
 
 ### Evidence before deletion
 
-A merged label is insufficient. Eligibility requires current remote ref evidence and the recorded pull request head SHA.
-
-### Bulk reads before parallel noise
-
-The scanner fetches branch and pull request pages in bulk, then joins locally. Bounded repository concurrency improves latency without turning branch count into branch-count network calls.
+A merged pull request is necessary but not sufficient. Eligibility also requires the current remote ref to match the exact pull request head SHA recorded at merge time.
 
 ### Narrow defaults
 
-Closed-unmerged branches, arbitrary age-based stale branches, local branches, tags, worktrees, and protected long-lived branches are excluded from automatic deletion in the first release.
+Closed-unmerged branches, arbitrary age-based stale branches, local branches, tags, worktrees, forks, protected branches, and branches involved in open pull requests are excluded from automatic deletion.
+
+### Preview before mutation
+
+Human-readable mode shows the repository, branch, pull request, merge date, and exact SHA before confirmation. JSON mode exposes the same scan result without presentation styling.
+
+### Revalidate at the point of action
+
+Scan results do not authorise deletion by themselves. Tidy Branches refreshes repository state, open pull requests, protection, and the exact branch ref immediately before each deletion.
+
+### Bulk reads, bounded concurrency
+
+The scanner fetches branch and pull request pages in bulk, joins the data locally, and limits cross-repository concurrency. Branch count should not become branch-count API traffic.
 
 ### CLI first
 
-The reusable product is the scan and safety engine. A VS Code extension can later present the same JSON model.
+The reusable product is the scan, evidence, revalidation, and mutation engine. Terminal and editor clients should consume that engine rather than reimplement eligibility.
 
 ### Useful from anywhere
 
-Inside a repository, the current repository is selected. Elsewhere, configured repositories are selected. Explicit `owner/repo` arguments always work.
+Inside a repository, the current repository is selected automatically. Elsewhere, users can pass repositories explicitly or scan a configured list.
 
 ## Success measures
 
-- a repository with hundreds of branches scans with a small number of paginated requests
+- repositories with hundreds of branches scan with a small number of paginated requests
 - squash and rebase merge histories are handled correctly
 - reused branches that advanced after merge are preserved
 - open pull request head and base branches are preserved
-- repeated scans are deterministic
-- JSON output is stable enough for editor and agent clients
-- mutation remains opt-in and auditable
+- repeated scans against the same state produce the same candidate set
+- mutation remains explicit, reviewable, and auditable
+- the stable JSON and selected-candidate apply interface can support a thin VS Code client
