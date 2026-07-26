@@ -20,6 +20,7 @@ smoke: build
 	@test "$$(./$(BINARY) --version)" = "$(VERSION)"
 	@help="$$(./$(BINARY) --help)"; \
 	printf '%s\n' "$$help" | grep -F -- '--preview' >/dev/null; \
+	printf '%s\n' "$$help" | grep -F -- '-R, --repo REPO' >/dev/null; \
 	printf '%s\n' "$$help" | grep -F -- 'gh tidy-branches undo' >/dev/null; \
 	printf '%s\n' "$$help" | grep -F -- 'gh tidy-branches doctor [owner/repo ...]' >/dev/null
 
@@ -32,6 +33,7 @@ install-dev: build
 	@test "$$(gh tidy-branches --version)" = "$(VERSION)"
 	@help="$$(gh tidy-branches --help)"; \
 	printf '%s\n' "$$help" | grep -F -- '--preview' >/dev/null; \
+	printf '%s\n' "$$help" | grep -F -- '-R, --repo REPO' >/dev/null; \
 	printf '%s\n' "$$help" | grep -F -- 'gh tidy-branches undo' >/dev/null
 	@echo "Installed local extension: gh tidy-branches ($(VERSION))"
 
