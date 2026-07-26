@@ -28,7 +28,7 @@ Before tagging:
 - `gh tidy-branches --help` works in CI
 - release version injection is covered by CI
 - representative Linux, macOS, and Windows cross-builds pass
-- the release notes identify known limitations
+- `docs/RELEASE_NOTES_v0.1.0-rc.1.md` accurately describes the release and known limitations
 
 ## Publish the first release candidate
 
@@ -42,6 +42,15 @@ git push origin v0.1.0-rc.1
 ```
 
 The tag starts the release workflow. Do not create a second release manually while that workflow is running.
+
+After the precompile workflow publishes the assets, set the release body from the reviewed notes:
+
+```console
+gh release edit v0.1.0-rc.1 \
+  --repo teamleaderleo/gh-tidy-branches \
+  --notes-file docs/RELEASE_NOTES_v0.1.0-rc.1.md \
+  --prerelease
+```
 
 ## Validate the published extension
 
@@ -64,7 +73,7 @@ v0.1.0-rc.1
 Run a non-mutating repository scan:
 
 ```console
-gh tidy-branches --dry-run teamleaderleo/smolrunner
+gh tidy-branches --preview -R teamleaderleo/smolrunner
 ```
 
 Then validate configured multi-repository scanning:
@@ -72,7 +81,15 @@ Then validate configured multi-repository scanning:
 ```console
 gh tidy-branches config add teamleaderleo/smolrunner
 gh tidy-branches config add teamleaderleo/glossless
-gh tidy-branches --all --dry-run
+gh tidy-branches --all --preview
+```
+
+Also validate the explicit repeated-repository path:
+
+```console
+gh tidy-branches --preview \
+  -R teamleaderleo/smolrunner \
+  -R teamleaderleo/glossless
 ```
 
 ## Validate release assets
@@ -106,5 +123,6 @@ Promote to `v0.1.0` only after:
 - installation succeeds on at least one Linux system
 - the dry-run candidate set is reviewed against known repositories
 - a controlled deletion test succeeds
-- JSON output and failure exit codes behave as documented
+- the stable JSON schema and selected-candidate apply interface are documented and tested
+- failure exit codes behave as documented
 - known limitations are documented in the release notes
