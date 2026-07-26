@@ -40,8 +40,9 @@ jobs:
           TIDY_BRANCHES_RELEASE_PLATFORMS: linux-amd64
         run: |
           bash script/build-release.sh ci-release
-          test -f dist/linux-amd64
-          test "$(./dist/linux-amd64 --version)" = "ci-release"
+          test -f dist/gh-tidy-branches-linux-amd64
+          test "$(./dist/gh-tidy-branches-linux-amd64 --version)" = "ci-release"
+          test "$(find dist -maxdepth 1 -type f -printf '%f\n')" = "gh-tidy-branches-linux-amd64"
 
   extension-install:
     name: local extension install
@@ -103,6 +104,6 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          output="dist/gh-tidy-branches_${GOOS}-${GOARCH}${{ matrix.extension }}"
+          output="dist/gh-tidy-branches-${GOOS}-${GOARCH}${{ matrix.extension }}"
           go build -trimpath -ldflags=-X=main.version=ci -o "$output" ./cmd/gh-tidy-branches
           test -f "$output"
