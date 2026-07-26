@@ -21,3 +21,24 @@ jobs:
           go_version_file: go.mod
           build_script_override: script/build-release.sh
           generate_attestations: true
+      - name: Make release discoverable to GitHub CLI
+        if: contains(github.ref_name, '-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # gh currently detects binary extensions through the latest
+          # non-prerelease release before it honours --pin. Keep the RC tag,
+          # but expose its release through that endpoint until v0.1.0 exists.
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease=false \
+            --latest
+      - name: Verify published extension installation
+        env:
+          GH_CONFIG_DIR: ${{ runner.temp }}/gh-config
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: "1"
+        run: |
+          gh extension install "$GITHUB_REPOSITORY" --pin "$GITHUB_REF_NAME"
+          test "$(gh tidy-branches --version)" = "$GITHUB_REF_NAME"
+          gh extension remove tidy-branches
