@@ -18,6 +18,9 @@ func colorEnabled(writer io.Writer) bool {
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("CLICOLOR") == "0" || strings.EqualFold(os.Getenv("TERM"), "dumb") {
 		return false
 	}
+	if os.Getenv("GH_FORCE_TTY") != "" {
+		return true
+	}
 	if force := os.Getenv("CLICOLOR_FORCE"); force != "" && force != "0" {
 		return true
 	}

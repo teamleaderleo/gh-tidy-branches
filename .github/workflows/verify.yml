@@ -32,6 +32,7 @@ jobs:
           test "$(./dist/gh-tidy-branches --version)" = "ci"
           help="$(./dist/gh-tidy-branches --help)"
           grep -F -- '--preview' <<<"$help"
+          grep -F -- '-R, --repo REPO' <<<"$help"
           grep -F -- 'gh tidy-branches undo' <<<"$help"
           grep -F -- 'gh tidy-branches doctor [owner/repo ...]' <<<"$help"
 
@@ -56,6 +57,7 @@ jobs:
           test "$(gh tidy-branches --version)" = "ci-extension"
           help="$(gh tidy-branches --help)"
           grep -F -- '--preview' <<<"$help"
+          grep -F -- '-R, --repo REPO' <<<"$help"
           grep -F -- 'gh tidy-branches undo' <<<"$help"
           grep -F -- 'gh tidy-branches doctor [owner/repo ...]' <<<"$help"
           gh extension remove tidy-branches

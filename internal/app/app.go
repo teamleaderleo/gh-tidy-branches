@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -122,6 +123,9 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return errorIfRepositoryFailures(repositoryErrors)
 	}
 	if !options.Yes {
+		if promptDisabled() {
+			return errors.New("interactive prompting is disabled; use --preview to inspect candidates or --yes to delete them")
+		}
 		fmt.Fprintf(stdout, "\nDelete these %d remote branch(es)? [y/N] ", candidateCount)
 		confirmed, err := readConfirmation(stdin)
 		if err != nil {
@@ -189,6 +193,18 @@ func parse(args []string) (Options, error) {
 			options.Yes = true
 		case arg == "--json":
 			options.JSON = true
+		case arg == "--repo" || arg == "-R":
+			index++
+			if index >= len(args) || strings.TrimSpace(args[index]) == "" {
+				return Options{}, errors.New("--repo requires an owner/repo value")
+			}
+			options.Repositories = append(options.Repositories, args[index])
+		case strings.HasPrefix(arg, "--repo="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--repo="))
+			if value == "" {
+				return Options{}, errors.New("--repo requires an owner/repo value")
+			}
+			options.Repositories = append(options.Repositories, value)
 		case arg == "--jobs":
 			index++
 			if index >= len(args) {
@@ -231,7 +247,14 @@ func parse(args []string) (Options, error) {
 	if options.DryRun && options.Yes {
 		return Options{}, errors.New("--preview/--dry-run and --yes cannot be used together")
 	}
+	if options.All && len(options.Repositories) > 0 {
+		return Options{}, errors.New("--all cannot be combined with explicit repositories")
+	}
 	return options, nil
+}
+
+func promptDisabled() bool {
+	return os.Getenv("GH_PROMPT_DISABLED") != ""
 }
 
 func parseJobs(value string) (int, error) {

@@ -11,8 +11,10 @@
 - [x] add recorded HTTP fixtures and an N+1 request regression ceiling
 - [x] add detailed previews, scan timing, and request diagnostics
 - [x] add terminal-aware colour with plain redirected and JSON output
+- [x] follow native `gh` repository, prompt, and forced-TTY conventions
 - [x] add a conservative exact-SHA undo receipt and restore command
 - [x] add an on-demand live create → merge → delete → undo workflow for a dedicated fixture repository
+- [x] draft first release-candidate notes and known limitations
 - [ ] publish a prerelease with cross-compiled assets
 - [ ] test installation through `gh extension install teamleaderleo/gh-tidy-branches`
 
@@ -20,8 +22,8 @@
 
 - interactive candidate selection
 - stable JSON schema and schema version
+- selected-candidate apply with exact-SHA revalidation
 - clearer skipped-reason reporting
-- `--repo` and repeated repository selection ergonomics
 - release notes and compatibility table
 - broader end-to-end API fixtures
 - terminal progress that remains quiet in JSON mode

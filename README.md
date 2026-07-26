@@ -90,6 +90,12 @@ gh tidy-branches --preview teamleaderleo/smolrunner
 gh tidy-branches --preview teamleaderleo/glossless
 ```
 
+Use the GitHub CLI-style repository flag when that reads better in scripts. Repeat it to scan more than one repository:
+
+```console
+gh tidy-branches --preview -R teamleaderleo/smolrunner -R teamleaderleo/glossless
+```
+
 Inside a Git repository, omit the repository argument:
 
 ```console
@@ -104,6 +110,8 @@ gh tidy-branches config add teamleaderleo/glossless
 gh tidy-branches --all --preview
 ```
 
+`--all` cannot be combined with explicit positional or `--repo` repositories. This is rejected rather than silently choosing one source.
+
 ## Terminal experience
 
 Interactive output is designed to make the safe path obvious:
@@ -117,9 +125,11 @@ Every branch below matches the exact head SHA of a merged pull request.
   DELETE  feat/finished-work   PR #123   merged 2026-07-20   abc123def4
 ```
 
-Colour is enabled automatically only when output is connected to a terminal. Redirected output stays plain text. Set `NO_COLOR=1` or `CLICOLOR=0` to disable colour explicitly.
+Colour is enabled automatically only when output is connected to a terminal. Redirected output stays plain text. Set `NO_COLOR=1` or `CLICOLOR=0` to disable colour explicitly. `GH_FORCE_TTY=1` follows GitHub CLI's convention for forcing terminal presentation.
 
-`--json` never contains colour codes, spinners, or presentation-only text.
+`GH_PROMPT_DISABLED=1` disables the deletion prompt. In that environment, use `--preview` for a non-mutating scan or `--yes` for an explicit apply.
+
+`--json` never contains colour codes, spinners, or presentation-only text. The release-candidate JSON shape is versioned but remains experimental until the selected-candidate apply interface is complete; editor clients should not treat it as stable yet.
 
 ## Commands
 
@@ -139,6 +149,7 @@ Useful flags:
 --dry-run             alias for --preview
 --yes                 delete all eligible candidates without prompting
 --all                 scan configured repositories
+-R, --repo REPO       scan an explicit repository; repeat for more
 --jobs N              scan at most N repositories concurrently, default 2
 --json                emit machine-readable output
 --delete-delay 1s     pause between delete requests
@@ -189,6 +200,7 @@ The ordinary CI suite is deterministic and runs on every pull request. A separat
 - [Security model](docs/SECURITY.md)
 - [Testing](docs/TESTING.md)
 - [Release runbook](docs/RELEASING.md)
+- [Release candidate notes](docs/RELEASE_NOTES_v0.1.0-rc.1.md)
 
 ## License
 
