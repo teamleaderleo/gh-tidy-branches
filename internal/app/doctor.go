@@ -125,7 +125,9 @@ func runDoctor(ctx context.Context, args []string, stdout io.Writer) error {
 }
 
 func printHelp(writer io.Writer) {
-	fmt.Fprintln(writer, `Tidy Branches safely removes remote branches whose pull requests merged.
+	fmt.Fprintln(writer, `Tidy Branches cleans up remote branches after their pull requests merge.
+It verifies exact commit evidence, shows the full candidate set, and rechecks every
+branch immediately before deletion.
 
 Usage:
   gh tidy-branches [flags] [owner/repo ...]
@@ -136,14 +138,14 @@ Usage:
   gh tidy-branches doctor [owner/repo ...]
 
 Flags:
-  --all                 scan configured repositories
+      --all             scan configured repositories
   -R, --repo REPO       scan an explicit repository; repeat for more
-  -n, --preview         display eligible branches without deleting
+  -n, --preview         show eligible branches without deleting
       --dry-run         alias for --preview
-  -y, --yes             delete eligible branches without prompting
-  --jobs N              concurrent repository scans, default 2
-  --json                machine-readable output
-  --delete-delay 1s     delay between delete requests
+  -y, --yes             delete every eligible branch without prompting
+      --jobs N          concurrent repository scans, default 2
+      --json            machine-readable output
+      --delete-delay 1s delay between delete requests
 
 Positional owner/repo arguments remain supported. Do not combine explicit
 repositories with --all.
@@ -152,6 +154,6 @@ Colour follows GitHub CLI conventions. NO_COLOR=1 disables it and GH_FORCE_TTY=1
 forces terminal presentation. GH_PROMPT_DISABLED=1 prevents interactive deletion;
 use --preview or --yes explicitly in that environment.
 
-After a successful deletion, gh tidy-branches undo can recreate branches at their
+After successful deletions, gh tidy-branches undo can recreate branches at their
 recorded SHAs when the names are still available and GitHub retains the commits.`)
 }
