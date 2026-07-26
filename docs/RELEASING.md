@@ -14,8 +14,10 @@ The workflow:
 4. creates or updates the matching GitHub Release through `cli/gh-extension-precompile`
 5. uploads the compiled assets
 6. generates build provenance attestations
+7. makes release-candidate tags visible to GitHub CLI's binary-extension discovery
+8. installs the published extension and verifies its exact version
 
-Tags containing a hyphen, such as `v0.1.0-rc.3`, are published as prereleases.
+GitHub CLI currently decides whether a repository is a binary extension by inspecting the latest non-prerelease release before it honours `--pin`. A repository containing only GitHub prereleases therefore cannot install its first pinned release candidate. Until `v0.1.0` exists, the workflow keeps the `v0.1.0-rc.*` tag and candidate wording but marks the GitHub Release itself as latest and non-prerelease for installer compatibility. Stable releases need no workaround.
 
 The release build script is exercised in ordinary pull-request CI with a single platform and a synthetic version. The test verifies both the embedded version and GitHub CLI's required `gh-tidy-branches-<os>-<arch>` asset naming convention. The normal cross-build matrix separately covers every supported release target.
 
@@ -50,13 +52,14 @@ git push origin v0.1.0-rc.3
 
 The tag starts the release workflow. Do not create a second release manually while that workflow is running.
 
-After the precompile workflow publishes the assets, set the release body from the reviewed notes:
+After the workflow publishes and validates the assets, set the release body from the reviewed notes without restoring GitHub's prerelease flag:
 
 ```console
 gh release edit v0.1.0-rc.3 \
   --repo teamleaderleo/gh-tidy-branches \
   --notes-file docs/RELEASE_NOTES_v0.1.0-rc.3.md \
-  --prerelease
+  --prerelease=false \
+  --latest
 ```
 
 ## Validate the published extension
@@ -121,10 +124,10 @@ When the release workflow or published installation fails:
 2. identify and record the exact failure
 3. fix the problem on `main`
 4. add a deterministic CI test for the failed release path when practical
-5. create a new prerelease tag
-6. record the failed candidate and reason in issue #2
+5. create a new prerelease tag only when the binaries or tagged source must change
+6. record the affected candidate and reason in issue #2
 
-If a release is published with an unsafe defect, remove or clearly mark the release and publish a corrected candidate. Never silently replace a release binary under an existing tag.
+Release metadata may be corrected in place when the tag, source, and binary assets remain unchanged. Never silently replace a release binary under an existing tag.
 
 ## Stable release
 
