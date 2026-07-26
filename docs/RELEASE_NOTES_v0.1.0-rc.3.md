@@ -2,7 +2,9 @@
 
 Tidy Branches is a GitHub CLI extension for cleaning up remote branches after their pull requests merge. It uses GitHub pull request records and current remote refs to identify a narrow set of branches, shows the complete candidate list, and rechecks every branch immediately before deletion.
 
-This candidate fixes the published asset names. `v0.1.0-rc.2` successfully built and published binaries, but the assets were named `darwin-arm64`, `linux-amd64`, and similar. GitHub CLI requires precompiled extension assets to begin with the repository name, such as `gh-tidy-branches-darwin-arm64`, so `rc.2` could not be installed through `gh extension install`.
+This candidate publishes conventionally named assets, adds exact release-filename checks, and completes the first successful installation from a published tag.
+
+The final installation blocker was not the binary contents. GitHub CLI first inspects the repository's latest non-prerelease release to decide whether it is a binary extension, before it fetches a tag supplied with `--pin`. Because the repository initially contained only prereleases, installation failed before the pinned assets were examined. Marking this same release latest and non-prerelease made the existing tag and binaries installable; no asset or tag was replaced.
 
 ## Install
 
@@ -31,9 +33,9 @@ gh tidy-branches --preview -R OWNER/REPOSITORY
 - writes an exact-SHA undo receipt and can recreate deleted branches when the name is still free and GitHub retains the commit
 - publishes precompiled Linux, macOS, and Windows binaries with provenance attestations
 
-## Packaging fix since rc.2
+## Packaging and installation changes
 
-Release assets now follow GitHub CLI's required naming convention:
+Release assets follow a clear repository-prefixed convention:
 
 ```text
 gh-tidy-branches-darwin-amd64
@@ -43,7 +45,9 @@ gh-tidy-branches-linux-arm64
 gh-tidy-branches-windows-amd64.exe
 ```
 
-Ordinary pull-request CI builds a release-shaped asset, verifies its exact filename, and checks the embedded version before another tag can be published.
+Ordinary pull-request CI builds a release-shaped asset, verifies its exact intended filename, and checks the embedded version.
+
+The release workflow now also handles the first-RC discovery workaround and installs the actual published extension. It fails unless `gh tidy-branches --version` exactly matches the release tag. This closes the gap between “assets were uploaded” and “a user can install the extension.”
 
 ## Safety boundary
 
@@ -69,9 +73,11 @@ With squash and rebase merges, the original pre-merge commit topology is not rep
 
 ## Validation status
 
-Before tagging, the exact release code passed formatting checks, race-enabled tests, `go vet`, direct CLI smoke tests, a real `gh extension install .` test, representative Linux, macOS, and Windows cross-builds, and a release-packaging smoke test that enforces GitHub CLI's required asset prefix.
+Before tagging, the exact release code passed formatting checks, race-enabled tests, `go vet`, direct CLI smoke tests, a real `gh extension install .` test, representative Linux, macOS, and Windows cross-builds, and a release-packaging smoke test.
 
-The separate on-demand workflow that creates a real branch, opens and merges a pull request, deletes the branch, restores it, and cleans up remains an RC validation task. Published installation should also be checked on real macOS and Linux systems before `v0.1.0`.
+The release workflow succeeded, the expected five assets were published, the release became visible to GitHub CLI's binary-extension discovery, and a clean Apple Silicon macOS installation reported `v0.1.0-rc.3`. A real preview against `teamleaderleo/smolrunner` completed successfully without changing any branch.
+
+The separate on-demand workflow that creates a real branch, opens and merges a pull request, deletes the branch, restores it, and cleans up remains a validation task before stable `v0.1.0`.
 
 ## Known limitations
 
@@ -79,6 +85,7 @@ The separate on-demand workflow that creates a real branch, opens and merges a p
 - The versioned JSON output remains experimental during the release-candidate series. Its stable schema and selected-candidate apply command will be completed before the VS Code client depends on it.
 - Interactive subset selection is not included yet. The current prompt applies the complete eligible set; use `--preview`, JSON output, or separate repository runs when reviewing candidates.
 - ETag caching and closed-unmerged branch review are intentionally deferred.
+- The GitHub Release is marked non-prerelease for compatibility with the current GitHub CLI discovery path, while the tag, title, and notes retain the release-candidate identity.
 
 ## Useful commands
 

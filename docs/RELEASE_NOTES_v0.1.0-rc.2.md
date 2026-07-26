@@ -1,14 +1,16 @@
 # Tidy Branches v0.1.0-rc.2
 
-> **Historical candidate — not installable through GitHub CLI.** This release published valid binaries, but their asset names omitted the required `gh-tidy-branches-` prefix. `gh extension install` therefore could not recognise them. Use `v0.1.0-rc.3` or newer.
+> **Historical candidate — published installation was not completed.** This release published valid platform binaries, but `gh extension install --pin v0.1.0-rc.2` failed while the repository contained only GitHub prereleases. We initially blamed the unprefixed asset names. Later inspection of GitHub CLI showed that it selects assets by platform suffix and first classifies binary extensions through the latest non-prerelease release. `rc.2` was not retested after that discovery. Use `v0.1.0-rc.3` or newer.
 
 Tidy Branches is a GitHub CLI extension for cleaning up remote branches after their pull requests merge. It uses GitHub pull request records and current remote refs to identify a narrow set of branches, shows the complete candidate list, and rechecks every branch immediately before deletion.
 
-This candidate replaced `v0.1.0-rc.1`, whose release workflow failed before creating a GitHub Release or uploading any binaries. The application code in `rc.1` passed its normal test suite; `rc.2` fixed the release build invocation but did not yet use GitHub CLI's required release-asset prefix.
+This candidate replaced `v0.1.0-rc.1`, whose release workflow failed before creating a GitHub Release or uploading binaries. The application code in `rc.1` passed its normal test suite; `rc.2` fixed and tested the release build invocation.
 
-## Known packaging defect
+## Packaging status
 
-The release assets were named `darwin-arm64`, `linux-amd64`, and similar. GitHub CLI requires precompiled extension assets to include the repository name, for example `gh-tidy-branches-darwin-arm64`. The binaries can be downloaded manually, but this candidate is not supported for installation through `gh extension install`.
+The release assets were named `darwin-arm64`, `linux-amd64`, and similar. Later candidates adopted the clearer `gh-tidy-branches-<os>-<arch>` convention and added exact filename assertions to CI.
+
+Those unprefixed names were initially treated as the reason installation failed. The current GitHub CLI installer actually matches assets by platform suffix, so the stronger explanation is the prerelease-only discovery path described above. This candidate remains historical because it was never revalidated through a clean published installation.
 
 ## What this release does
 
@@ -46,9 +48,11 @@ With squash and rebase merges, the original pre-merge commit topology is not rep
 
 ## Validation status
 
-Before tagging, the exact release code passed formatting checks, race-enabled tests, `go vet`, direct CLI smoke tests, a real `gh extension install .` test, representative Linux, macOS, and Windows cross-builds, and a release-build smoke test. Published installation then exposed the missing asset-name prefix.
+Before tagging, the exact release code passed formatting checks, race-enabled tests, `go vet`, direct CLI smoke tests, a real `gh extension install .` test, representative Linux, macOS, and Windows cross-builds, and a release-build smoke test.
 
-The separate on-demand workflow that creates a real branch, opens and merges a pull request, deletes the branch, restores it, and cleans up remains an RC validation task.
+The release workflow successfully produced and uploaded binaries. A clean published installation did not succeed, and the exact discovery cause was only established during `rc.3` validation.
+
+The separate on-demand workflow that creates a real branch, opens and merges a pull request, deletes the branch, restores it, and cleans up remained an RC validation task.
 
 ## Known limitations
 
