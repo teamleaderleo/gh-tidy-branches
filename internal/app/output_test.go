@@ -70,9 +70,24 @@ func TestPrintApplyResultsColourCanBeForced(t *testing.T) {
 	}
 }
 
+func TestGitHubForceTTYEnablesColour(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("CLICOLOR", "")
+	t.Setenv("CLICOLOR_FORCE", "")
+	t.Setenv("GH_FORCE_TTY", "1")
+	t.Setenv("TERM", "xterm-256color")
+
+	var output bytes.Buffer
+	style := newTerminalStyle(&output)
+	if !style.color {
+		t.Fatal("expected GH_FORCE_TTY to enable colour")
+	}
+}
+
 func TestColourDisabledForDumbTerminal(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("CLICOLOR_FORCE", "")
+	t.Setenv("GH_FORCE_TTY", "")
 	t.Setenv("TERM", "dumb")
 
 	var output bytes.Buffer
