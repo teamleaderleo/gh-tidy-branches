@@ -162,6 +162,7 @@ The test suite includes deterministic scanner and API fixtures, an installed-ext
 ## Documentation
 
 - [Product brief](docs/PRODUCT.md)
+- [Discovery and product notes](docs/DISCOVERY_AND_PRODUCT_NOTES.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Security model](docs/SECURITY.md)
