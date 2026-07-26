@@ -1,18 +1,8 @@
 # Tidy Branches v0.1.0-rc.1
 
-The first release candidate of Tidy Branches is a precompiled GitHub CLI extension for safely cleaning up remote branches whose pull requests have already merged.
+Tidy Branches is a precompiled GitHub CLI extension for cleaning up remote branches after their pull requests merge. It uses GitHub's pull request records and current remote refs to identify a narrow set of branches, shows the complete candidate list, and rechecks every branch immediately before deletion.
 
-## Highlights
-
-- scans one repository, repeated `-R/--repo` repositories, or configured repository groups
-- discovers branches and pull requests in paginated bulk requests rather than one API call per branch
-- deletes only same-repository branches merged into the current default branch
-- requires the current remote ref to equal the exact pull request head SHA recorded at merge time
-- excludes default, protected, fork, advanced, and open-pull-request head or base branches
-- revalidates repository state, open pull requests, protection, and the exact ref immediately before deletion
-- provides a complete deletion preview, terminal-aware colour, JSON output, diagnostics, and bounded read retries
-- writes an exact-SHA undo receipt and can recreate deleted branches when the name is still free and GitHub retains the commit
-- ships precompiled Linux, macOS, and Windows binaries with provenance attestations
+This is the first release candidate. It is intended for real-world installation and preview testing before the stable `v0.1.0` release.
 
 ## Install
 
@@ -20,7 +10,7 @@ The first release candidate of Tidy Branches is a precompiled GitHub CLI extensi
 gh extension install teamleaderleo/gh-tidy-branches --pin v0.1.0-rc.1
 ```
 
-Then verify:
+Verify the installation and preview one repository:
 
 ```console
 gh tidy-branches --version
@@ -28,28 +18,53 @@ gh tidy-branches doctor
 gh tidy-branches --preview -R OWNER/REPOSITORY
 ```
 
+## What this release does
+
+- scans the current repository, explicit repositories, or a configured repository list
+- supports repeatable `-R/--repo` flags for familiar GitHub CLI-style selection
+- finds branches through paginated bulk API requests rather than one request per branch
+- proposes only same-repository branches whose pull requests merged into the current default branch
+- requires the current branch ref to match the exact pull request head SHA recorded at merge time
+- excludes default, protected, fork, advanced, and open-pull-request head or base branches
+- refreshes repository state, open pull requests, branch protection, and the exact ref immediately before deletion
+- provides a complete preview, terminal-aware colour, JSON output, diagnostics, and bounded retries for safe reads
+- writes an exact-SHA undo receipt and can recreate deleted branches when the name is still free and GitHub retains the commit
+- publishes precompiled Linux, macOS, and Windows binaries with provenance attestations
+
 ## Safety boundary
 
-This release candidate does not delete:
+This release candidate does **not** automatically delete:
 
 - closed but unmerged pull request branches
 - arbitrary stale branches
 - branches with no merged pull request evidence
-- local branches or worktrees
-- tags
-- protected branches
 - branches that advanced after their pull request merged
 - branches used by an open pull request
+- protected or default branches
+- branches from forks
+- local branches or worktrees
+- tags
 
-GitHub's delete-ref API does not provide an atomic expected-SHA compare-and-delete operation. Tidy Branches narrows that race by re-reading the branch immediately before each serial deletion, but it cannot eliminate the final network race completely.
+GitHub's delete-ref API does not offer an atomic “delete only if the branch still equals this SHA” operation. Tidy Branches narrows that race by re-reading each branch immediately before its serial deletion, but it cannot eliminate the final network race completely.
+
+## What branch deletion preserves
+
+Deleting an eligible branch removes the named remote ref. It does not delete the pull request, its discussion and reviews, the merged result on the default branch, local branches, tags, issues, or releases.
+
+With squash and rebase merges, the original pre-merge commit topology is not represented identically on the default branch. The preview and exact-SHA undo receipt provide additional evidence and recovery for that reason.
+
+## Validation status
+
+Before tagging, the exact release code passed formatting checks, race-enabled tests, `go vet`, direct CLI smoke tests, a real `gh extension install .` test, and representative Linux, macOS, and Windows cross-builds.
+
+The separate on-demand workflow that creates a real branch, opens and merges a pull request, deletes the branch, restores it, and cleans up was **not run before this tag was pushed**. Running that workflow and validating the published binaries on real macOS and Linux systems remain RC validation tasks. A discovered defect will be fixed in a new tag such as `v0.1.0-rc.2`; this tag and its binaries will not be silently replaced.
 
 ## Known limitations
 
-- Undo is best-effort rather than a native transactional undelete.
-- The JSON output is versioned but remains experimental during the release-candidate series. Its stable schema and selected-candidate apply command will be completed before the VS Code client depends on it.
-- Interactive subset selection is not included yet; the current prompt applies the complete eligible set. Use `--preview`, JSON output, or separate repository runs when reviewing candidates.
-- ETag caching and broader closed-unmerged branch review are intentionally deferred.
-- The release candidate still needs published-install validation on real macOS and Linux systems before `v0.1.0`.
+- Undo is best-effort, not a native transactional undelete.
+- The versioned JSON output remains experimental during the release-candidate series. Its stable schema and selected-candidate apply command will be completed before the VS Code client depends on it.
+- Interactive subset selection is not included yet. The current prompt applies the complete eligible set; use `--preview`, JSON output, or separate repository runs when reviewing candidates.
+- ETag caching and closed-unmerged branch review are intentionally deferred.
 
 ## Useful commands
 
@@ -63,7 +78,7 @@ gh tidy-branches --preview -R OWNER/ONE -R OWNER/TWO
 # Preview configured repositories
 gh tidy-branches --all --preview
 
-# Delete every currently eligible branch after revalidation
+# Delete every currently eligible branch after live revalidation
 gh tidy-branches --yes -R OWNER/REPOSITORY
 
 # Restore the most recent successfully deleted set
