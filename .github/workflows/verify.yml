@@ -35,6 +35,13 @@ jobs:
           grep -F -- '-R, --repo REPO' <<<"$help"
           grep -F -- 'gh tidy-branches undo' <<<"$help"
           grep -F -- 'gh tidy-branches doctor [owner/repo ...]' <<<"$help"
+      - name: Test release packaging
+        env:
+          TIDY_BRANCHES_RELEASE_PLATFORMS: linux-amd64
+        run: |
+          bash script/build-release.sh ci-release
+          test -f dist/linux-amd64
+          test "$(./dist/linux-amd64 --version)" = "ci-release"
 
   extension-install:
     name: local extension install

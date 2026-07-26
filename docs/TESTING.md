@@ -1,6 +1,6 @@
 # Testing
 
-Tidy Branches uses three test layers because destructive branch cleanup needs both deterministic coverage and proof against the real GitHub API.
+Tidy Branches uses several test layers because destructive branch cleanup needs deterministic coverage, proof of the installed command, release-packaging checks, and validation against the real GitHub API.
 
 ## 1. Deterministic tests on every pull request
 
@@ -17,9 +17,23 @@ The API and scanner tests cover pagination, fork pull requests, reused branch na
 
 ## 2. Installed-extension test on every pull request
 
-The `local extension install` job builds the repository-root executable, installs it through `gh extension install .`, and invokes `gh tidy-branches` through GitHub CLI. This catches packaging and stale-binary problems that unit tests cannot see.
+The `local extension install` job builds the repository-root executable, installs it through `gh extension install .`, and invokes `gh tidy-branches` through GitHub CLI. This catches local packaging and stale-binary problems that unit tests cannot see.
 
-## 3. Live branch lifecycle test on demand
+## 3. Release-packaging test on every pull request
+
+The verify job runs `script/build-release.sh` for one representative platform, checks that it creates the exact `dist/<os>-<arch>` asset name expected by `cli/gh-extension-precompile`, and verifies that the supplied release version is embedded in the binary.
+
+The cross-build matrix separately compiles every supported release target:
+
+- Linux amd64
+- Linux arm64
+- macOS amd64
+- macOS arm64
+- Windows amd64
+
+This layer exists because successful application cross-builds do not by themselves prove that the release action receives valid arguments or creates correctly named assets.
+
+## 4. Live branch lifecycle test on demand
 
 `.github/workflows/live-integration.yml` is manually dispatched against a dedicated fixture repository. It performs the complete remote lifecycle:
 
