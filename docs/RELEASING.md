@@ -15,9 +15,9 @@ The workflow:
 5. uploads the compiled assets
 6. generates build provenance attestations
 
-Tags containing a hyphen, such as `v0.1.0-rc.2`, are published as prereleases.
+Tags containing a hyphen, such as `v0.1.0-rc.3`, are published as prereleases.
 
-The release build script is exercised in ordinary pull-request CI with a single platform and a synthetic version. The normal cross-build matrix separately covers every supported release target.
+The release build script is exercised in ordinary pull-request CI with a single platform and a synthetic version. The test verifies both the embedded version and GitHub CLI's required `gh-tidy-branches-<os>-<arch>` asset naming convention. The normal cross-build matrix separately covers every supported release target.
 
 ## Prerelease checklist
 
@@ -28,21 +28,24 @@ Before tagging:
 - the repository has the `gh-extension` topic
 - the release commit has no known P0 safety regression
 - `gh tidy-branches --help` works in CI
-- the release-packaging smoke test verifies the embedded version
+- the release-packaging smoke test verifies the embedded version and exact installable asset name
 - representative Linux, macOS, and Windows cross-builds pass
 - the matching release-notes file accurately describes the release and known limitations
 
 ## Publish the current release candidate
 
-`v0.1.0-rc.1` remains as a historical failed tag. Its workflow failed before creating a GitHub Release or uploading assets. Do not move or reuse that tag.
+Historical candidates:
 
-Publish the corrected candidate from an up-to-date local clone:
+- `v0.1.0-rc.1` failed before creating a GitHub Release or uploading assets.
+- `v0.1.0-rc.2` published valid binaries with unrecognised filenames such as `darwin-arm64`, so GitHub CLI could not install it.
+
+Do not move, reuse, or silently replace either tag. Publish the corrected candidate from an up-to-date local clone:
 
 ```console
 git switch main
 git pull --ff-only
-git tag -a v0.1.0-rc.2 -m "Tidy Branches v0.1.0-rc.2"
-git push origin v0.1.0-rc.2
+git tag -a v0.1.0-rc.3 -m "Tidy Branches v0.1.0-rc.3"
+git push origin v0.1.0-rc.3
 ```
 
 The tag starts the release workflow. Do not create a second release manually while that workflow is running.
@@ -50,19 +53,29 @@ The tag starts the release workflow. Do not create a second release manually whi
 After the precompile workflow publishes the assets, set the release body from the reviewed notes:
 
 ```console
-gh release edit v0.1.0-rc.2 \
+gh release edit v0.1.0-rc.3 \
   --repo teamleaderleo/gh-tidy-branches \
-  --notes-file docs/RELEASE_NOTES_v0.1.0-rc.2.md \
+  --notes-file docs/RELEASE_NOTES_v0.1.0-rc.3.md \
   --prerelease
 ```
 
 ## Validate the published extension
 
-Use a clean GitHub CLI extension installation:
+First inspect the asset names. They must be:
+
+```text
+gh-tidy-branches-darwin-amd64
+gh-tidy-branches-darwin-arm64
+gh-tidy-branches-linux-amd64
+gh-tidy-branches-linux-arm64
+gh-tidy-branches-windows-amd64.exe
+```
+
+Then use a clean GitHub CLI extension installation:
 
 ```console
 gh extension remove tidy-branches 2>/dev/null || true
-gh extension install teamleaderleo/gh-tidy-branches --pin v0.1.0-rc.2
+gh extension install teamleaderleo/gh-tidy-branches --pin v0.1.0-rc.3
 gh tidy-branches --version
 gh tidy-branches --help
 gh tidy-branches doctor
@@ -71,7 +84,7 @@ gh tidy-branches doctor
 Expected version output:
 
 ```text
-v0.1.0-rc.2
+v0.1.0-rc.3
 ```
 
 Run a non-mutating repository scan:
@@ -98,21 +111,13 @@ gh tidy-branches --preview \
 
 ## Validate release assets
 
-Confirm that the release contains binaries for:
-
-- Linux amd64
-- Linux arm64
-- macOS amd64
-- macOS arm64
-- Windows amd64
-
-Confirm the provenance attestations were generated successfully.
+Confirm that the release contains the five prefixed binaries listed above and that provenance attestations were generated successfully.
 
 ## Failure handling
 
-When the release workflow fails:
+When the release workflow or published installation fails:
 
-1. do not reuse or move the failed tag after changing code
+1. do not reuse or move the affected tag after changing code
 2. identify and record the exact failure
 3. fix the problem on `main`
 4. add a deterministic CI test for the failed release path when practical
