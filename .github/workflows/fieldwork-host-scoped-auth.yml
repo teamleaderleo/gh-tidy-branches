@@ -3,7 +3,7 @@ name: fieldwork host-scoped auth validation
 on:
   pull_request:
     branches:
-      - fieldwork/host-scoped-auth-validation-base
+      - fieldwork/host-config-validation-base-v2
     types: [opened, synchronize, reopened]
 
 permissions:
