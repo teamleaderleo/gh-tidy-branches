@@ -20,6 +20,10 @@ type API interface {
 	DeleteBranch(context.Context, string, string) error
 }
 
+type allClosedPullRequestAPI interface {
+	ListAllClosedPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
+}
+
 type RestoreAPI interface {
 	GetBranch(context.Context, string, string) (githubapi.Branch, error)
 	CreateBranch(context.Context, string, string, string) error
@@ -97,6 +101,12 @@ func Repository(ctx context.Context, api API, fullName string) (Result, error) {
 	go func() { defer wg.Done(); openPRs, errs[1] = api.ListOpenPullRequests(ctx, fullName) }()
 	go func() {
 		defer wg.Done()
+		if allClosedAPI, ok := api.(allClosedPullRequestAPI); ok {
+			closed, errs[2] = allClosedAPI.ListAllClosedPullRequests(ctx, fullName)
+			return
+		}
+		// Compatibility path for older API implementations. Concrete GitHub clients implement the
+		// all-base method so production scanning cannot miss a newer cross-base branch reuse.
 		closed, errs[2] = api.ListClosedPullRequests(ctx, fullName, repository.DefaultBranch)
 	}()
 	wg.Wait()
@@ -125,7 +135,7 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 	}
 	latestClosed := make(map[string]githubapi.PullRequest)
 	for _, pull := range closedPRs {
-		if pull.Base.Ref != repository.DefaultBranch || pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
+		if pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
 			continue
 		}
 		existing, found := latestClosed[pull.Head.Ref]
@@ -135,7 +145,7 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 	}
 	candidates := make([]Candidate, 0)
 	for branchName, pull := range latestClosed {
-		if pull.MergedAt == nil {
+		if pull.MergedAt == nil || pull.Base.Ref != repository.DefaultBranch {
 			continue
 		}
 		if branchName == repository.DefaultBranch {
