@@ -1,0 +1,55 @@
+name: fieldwork host-scoped auth validation
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/host-scoped-auth-validation-base
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: fix/host-scoped-auth-token
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Wire host-scoped token resolver
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/githubapi/client.go')
+          text = path.read_text()
+          old = 'token := firstNonEmpty(os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_ENTERPRISE_TOKEN"))'
+          new = 'token := tokenFromEnvironment(host)'
+          if old in text:
+              path.write_text(text.replace(old, new))
+          elif new not in text:
+              raise SystemExit('unexpected environment token selection')
+          PY
+      - name: Run repository gates
+        run: |
+          gofmt -w internal/githubapi
+          git diff --check
+          go test -race ./...
+          go vet ./...
+      - name: Record validated source state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add internal/githubapi/client.go internal/githubapi/auth_env.go internal/githubapi/auth_env_test.go
+          git diff --cached --check
+          git commit -m 'fix(githubapi): select auth token for target host'
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:fix/host-scoped-auth-token
