@@ -29,7 +29,7 @@ func TestTokenFromEnvironmentUsesHostScopedFamilies(t *testing.T) {
 		},
 		{
 			name:              "ghe dot com subdomain uses public token family",
-			host:              "tenant.ghe.com",
+			host:              "Tenant.GHE.com",
 			ghToken:           "gh-token",
 			ghEnterpriseToken: "enterprise-token",
 			want:              "gh-token",
@@ -65,6 +65,25 @@ func TestTokenFromEnvironmentUsesHostScopedFamilies(t *testing.T) {
 
 			if got := tokenFromEnvironment(test.host); got != test.want {
 				t.Fatalf("tokenFromEnvironment(%q) = %q, want %q", test.host, got, test.want)
+			}
+		})
+	}
+}
+
+func TestAPIBaseURLUsesHostScopedEndpoints(t *testing.T) {
+	tests := []struct {
+		host string
+		want string
+	}{
+		{host: "github.com", want: "https://api.github.com"},
+		{host: "Tenant.GHE.com", want: "https://api.tenant.ghe.com"},
+		{host: "github.example.com", want: "https://github.example.com/api/v3"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.host, func(t *testing.T) {
+			if got := apiBaseURL(test.host); got != test.want {
+				t.Fatalf("apiBaseURL(%q) = %q, want %q", test.host, got, test.want)
 			}
 		})
 	}
