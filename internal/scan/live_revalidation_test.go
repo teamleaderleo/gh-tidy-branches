@@ -72,7 +72,7 @@ func TestApplyRefreshesDefaultBranchBeforeEachDeletion(t *testing.T) {
 	}
 }
 
-func TestApplyRecordsRefreshFailureAndContinues(t *testing.T) {
+func TestApplyRecordsOpenPullRefreshFailureAndContinues(t *testing.T) {
 	refreshErr := errors.New("refresh open pull requests")
 	api := &liveRevalidationAPI{
 		repositories: []githubapi.Repository{
@@ -88,6 +88,30 @@ func TestApplyRecordsRefreshFailureAndContinues(t *testing.T) {
 			"third":  branch("third", "third-sha"),
 		},
 	}
+	assertRefreshFailureContinues(t, api, refreshErr)
+}
+
+func TestApplyRecordsRepositoryRefreshFailureAndContinues(t *testing.T) {
+	refreshErr := errors.New("refresh repository")
+	api := &liveRevalidationAPI{
+		repositories: []githubapi.Repository{
+			{FullName: "owner/repo", DefaultBranch: "main"},
+			{FullName: "owner/repo", DefaultBranch: "main"},
+			{FullName: "owner/repo", DefaultBranch: "main"},
+		},
+		repositoryErrors: map[int]error{2: refreshErr},
+		openPulls:       [][]githubapi.PullRequest{nil, nil},
+		branches: map[string]githubapi.Branch{
+			"first":  branch("first", "first-sha"),
+			"second": branch("second", "second-sha"),
+			"third":  branch("third", "third-sha"),
+		},
+	}
+	assertRefreshFailureContinues(t, api, refreshErr)
+}
+
+func assertRefreshFailureContinues(t *testing.T, api *liveRevalidationAPI, refreshErr error) {
+	t.Helper()
 	candidates := []Candidate{
 		{Repository: "owner/repo", Branch: "first", HeadSHA: "first-sha"},
 		{Repository: "owner/repo", Branch: "second", HeadSHA: "second-sha"},
@@ -110,17 +134,21 @@ func TestApplyRecordsRefreshFailureAndContinues(t *testing.T) {
 }
 
 type liveRevalidationAPI struct {
-	repositories    []githubapi.Repository
-	openPulls       [][]githubapi.PullRequest
-	openPullErrors  map[int]error
-	branches        map[string]githubapi.Branch
-	deleted         []string
-	repositoryCalls int
-	openPullCalls   int
+	repositories     []githubapi.Repository
+	repositoryErrors map[int]error
+	openPulls        [][]githubapi.PullRequest
+	openPullErrors   map[int]error
+	branches         map[string]githubapi.Branch
+	deleted          []string
+	repositoryCalls  int
+	openPullCalls    int
 }
 
 func (f *liveRevalidationAPI) GetRepository(_ context.Context, _ string) (githubapi.Repository, error) {
 	f.repositoryCalls++
+	if err := f.repositoryErrors[f.repositoryCalls]; err != nil {
+		return githubapi.Repository{}, err
+	}
 	index := f.repositoryCalls - 1
 	if index >= len(f.repositories) {
 		index = len(f.repositories) - 1
