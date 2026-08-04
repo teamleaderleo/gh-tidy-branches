@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Wire host-scoped token resolver
+      - name: Wire host-scoped client configuration
         shell: bash
         run: |
           python - <<'PY'
@@ -29,12 +29,25 @@ jobs:
 
           path = Path('internal/githubapi/client.go')
           text = path.read_text()
-          old = 'token := firstNonEmpty(os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_ENTERPRISE_TOKEN"))'
-          new = 'token := tokenFromEnvironment(host)'
-          if old in text:
-              path.write_text(text.replace(old, new))
-          elif new not in text:
+
+          old_token = 'token := firstNonEmpty(os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_ENTERPRISE_TOKEN"))'
+          new_token = 'token := tokenFromEnvironment(host)'
+          if old_token in text:
+              text = text.replace(old_token, new_token)
+          elif new_token not in text:
               raise SystemExit('unexpected environment token selection')
+
+          old_base = '''baseURL := "https://api.github.com"
+	if host != "github.com" {
+		baseURL = "https://" + host + "/api/v3"
+	}'''
+          new_base = 'baseURL := apiBaseURL(host)'
+          if old_base in text:
+              text = text.replace(old_base, new_base)
+          elif new_base not in text:
+              raise SystemExit('unexpected API base URL selection')
+
+          path.write_text(text)
           PY
       - name: Run repository gates
         run: |
@@ -50,6 +63,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add internal/githubapi/client.go internal/githubapi/auth_env.go internal/githubapi/auth_env_test.go
           git diff --cached --check
-          git commit -m 'fix(githubapi): select auth token for target host'
+          git commit -m 'fix(githubapi): configure client for target host'
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             HEAD:fix/host-scoped-auth-token
