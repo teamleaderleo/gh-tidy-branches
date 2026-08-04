@@ -123,18 +123,21 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 		}
 		protectedByOpenPR[pull.Base.Ref] = struct{}{}
 	}
-	latestMerged := make(map[string]githubapi.PullRequest)
+	latestClosed := make(map[string]githubapi.PullRequest)
 	for _, pull := range closedPRs {
-		if pull.MergedAt == nil || pull.Base.Ref != repository.DefaultBranch || pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
+		if pull.Base.Ref != repository.DefaultBranch || pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
 			continue
 		}
-		existing, found := latestMerged[pull.Head.Ref]
-		if !found || existing.MergedAt.Before(*pull.MergedAt) {
-			latestMerged[pull.Head.Ref] = pull
+		existing, found := latestClosed[pull.Head.Ref]
+		if !found || pull.Number > existing.Number {
+			latestClosed[pull.Head.Ref] = pull
 		}
 	}
 	candidates := make([]Candidate, 0)
-	for branchName, pull := range latestMerged {
+	for branchName, pull := range latestClosed {
+		if pull.MergedAt == nil {
+			continue
+		}
 		if branchName == repository.DefaultBranch {
 			continue
 		}
