@@ -10,12 +10,12 @@ import (
 )
 
 // Keep the shared Apply/Restore test double compatible with the scanner API. Tests that exercise
-// Repository use repositoryScanAPI below so they can supply complete closed-PR history explicitly.
+// Repository use repositoryScanAPI below so they can assert the production request path explicitly.
 func (f *fakeAPI) ListAllClosedPullRequests(
 	_ context.Context,
 	_ string,
 ) ([]githubapi.PullRequest, error) {
-	return nil, nil
+	return append([]githubapi.PullRequest(nil), f.closedPRs...), nil
 }
 
 func TestRepositoryUsesAllClosedPullRequestBasesForReuseSafety(t *testing.T) {
