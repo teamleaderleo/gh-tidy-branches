@@ -34,8 +34,29 @@ func TestTokenFromEnvironmentUsesHostScopedFamilies(t *testing.T) {
 			want:              "",
 		},
 		{
+			name:              "github dot com subdomain uses public token family",
+			host:              "uploads.github.com",
+			ghToken:           "gh-token",
+			ghEnterpriseToken: "enterprise-token",
+			want:              "gh-token",
+		},
+		{
+			name:              "github localhost uses public token family",
+			host:              "github.localhost",
+			ghToken:           "gh-token",
+			ghEnterpriseToken: "enterprise-token",
+			want:              "gh-token",
+		},
+		{
 			name:              "ghe dot com subdomain uses public token family",
 			host:              " Tenant.GHE.com ",
+			ghToken:           "gh-token",
+			ghEnterpriseToken: "enterprise-token",
+			want:              "gh-token",
+		},
+		{
+			name:              "nested ghe dot com host normalizes to tenant",
+			host:              "org.Tenant.GHE.com",
 			ghToken:           "gh-token",
 			ghEnterpriseToken: "enterprise-token",
 			want:              "gh-token",
@@ -82,7 +103,11 @@ func TestAPIBaseURLUsesHostScopedEndpoints(t *testing.T) {
 		want string
 	}{
 		{host: "github.com", want: "https://api.github.com"},
+		{host: "uploads.github.com", want: "https://api.github.com"},
+		{host: "github.localhost", want: "http://api.github.localhost"},
+		{host: "api.github.localhost", want: "http://api.github.localhost"},
 		{host: " Tenant.GHE.com ", want: "https://api.tenant.ghe.com"},
+		{host: "org.Tenant.GHE.com", want: "https://api.tenant.ghe.com"},
 		{host: "github.example.com", want: "https://github.example.com/api/v3"},
 	}
 
