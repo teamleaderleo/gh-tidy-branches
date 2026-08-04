@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	defaultHost  = "github.com"
+	defaultHost   = "github.com"
 	localhostHost = "github.localhost"
-	tenancyHost  = "ghe.com"
+	tenancyHost   = "ghe.com"
 )
 
 func tokenFromEnvironment(host string) string {
