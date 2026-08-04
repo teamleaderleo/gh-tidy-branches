@@ -17,3 +17,25 @@ func (c *Client) ListAllClosedPullRequests(ctx context.Context, fullName string)
 		"direction": {"desc"},
 	})
 }
+
+// ListClosedPullRequestsForHead returns closed pull requests for one same-repository branch name
+// across every base branch.
+//
+// Apply uses this immediately before deletion so a branch reuse after the original scan cannot be
+// hidden by the earlier preview or by a deletion delay.
+func (c *Client) ListClosedPullRequestsForHead(
+	ctx context.Context,
+	fullName string,
+	branch string,
+) ([]PullRequest, error) {
+	owner, _, err := splitRepository(fullName)
+	if err != nil {
+		return nil, err
+	}
+	return c.listPullRequests(ctx, fullName, url.Values{
+		"state":     {"closed"},
+		"head":      {owner + ":" + branch},
+		"sort":      {"created"},
+		"direction": {"desc"},
+	})
+}
