@@ -16,12 +16,8 @@ type API interface {
 	ListBranches(context.Context, string) ([]githubapi.Branch, error)
 	GetBranch(context.Context, string, string) (githubapi.Branch, error)
 	ListOpenPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
-	ListClosedPullRequests(context.Context, string, string) ([]githubapi.PullRequest, error)
-	DeleteBranch(context.Context, string, string) error
-}
-
-type allClosedPullRequestAPI interface {
 	ListAllClosedPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
+	DeleteBranch(context.Context, string, string) error
 }
 
 type RestoreAPI interface {
@@ -99,16 +95,7 @@ func Repository(ctx context.Context, api API, fullName string) (Result, error) {
 	wg.Add(3)
 	go func() { defer wg.Done(); branches, errs[0] = api.ListBranches(ctx, fullName) }()
 	go func() { defer wg.Done(); openPRs, errs[1] = api.ListOpenPullRequests(ctx, fullName) }()
-	go func() {
-		defer wg.Done()
-		if allClosedAPI, ok := api.(allClosedPullRequestAPI); ok {
-			closed, errs[2] = allClosedAPI.ListAllClosedPullRequests(ctx, fullName)
-			return
-		}
-		// Compatibility path for older API implementations. Concrete GitHub clients implement the
-		// all-base method so production scanning cannot miss a newer cross-base branch reuse.
-		closed, errs[2] = api.ListClosedPullRequests(ctx, fullName, repository.DefaultBranch)
-	}()
+	go func() { defer wg.Done(); closed, errs[2] = api.ListAllClosedPullRequests(ctx, fullName) }()
 	wg.Wait()
 	for _, scanErr := range errs {
 		if scanErr != nil {
