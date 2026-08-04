@@ -49,7 +49,7 @@ func NewFromEnvironment(ctx context.Context) (*Client, error) {
 		host = "github.com"
 	}
 
-	token := firstNonEmpty(os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_ENTERPRISE_TOKEN"))
+	token := tokenFromEnvironment(host)
 	if token == "" {
 		cmd := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", host)
 		output, err := cmd.Output()
@@ -62,10 +62,7 @@ func NewFromEnvironment(ctx context.Context) (*Client, error) {
 		return nil, errors.New("GitHub token is empty")
 	}
 
-	baseURL := "https://api.github.com"
-	if host != "github.com" {
-		baseURL = "https://" + host + "/api/v3"
-	}
+	baseURL := apiBaseURL(host)
 
 	return &Client{
 		BaseURL:        baseURL,
