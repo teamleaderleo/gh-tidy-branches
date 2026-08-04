@@ -17,6 +17,7 @@ type API interface {
 	GetBranch(context.Context, string, string) (githubapi.Branch, error)
 	ListOpenPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
 	ListAllClosedPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
+	ListClosedPullRequestsForHead(context.Context, string, string) ([]githubapi.PullRequest, error)
 	DeleteBranch(context.Context, string, string) error
 }
 
@@ -156,6 +157,25 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 	return Result{Repository: repository.FullName, DefaultBranch: repository.DefaultBranch, BranchCount: len(branches), OpenPRCount: len(openPRs), Candidates: candidates}
 }
 
+func latestClosedPullRequest(
+	repository string,
+	branchName string,
+	pulls []githubapi.PullRequest,
+) (githubapi.PullRequest, bool) {
+	var latest githubapi.PullRequest
+	found := false
+	for _, pull := range pulls {
+		if pull.Head.Ref != branchName || pull.Head.Repo == nil || pull.Head.Repo.FullName != repository {
+			continue
+		}
+		if !found || pull.Number > latest.Number {
+			latest = pull
+			found = true
+		}
+	}
+	return latest, found
+}
+
 func Apply(ctx context.Context, api API, repository string, candidates []Candidate, delay time.Duration) ([]ApplyResult, error) {
 	repositoryState, err := api.GetRepository(ctx, repository)
 	if err != nil {
@@ -186,6 +206,18 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 				return results, err
 			}
 		}
+
+		closedPRs, err := api.ListClosedPullRequestsForHead(ctx, repository, candidate.Branch)
+		if err != nil {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
+			continue
+		}
+		latest, found := latestClosedPullRequest(repository, candidate.Branch, closedPRs)
+		if !found || latest.Number != candidate.PullRequest || latest.MergedAt == nil || latest.Base.Ref != repositoryState.DefaultBranch || latest.Head.SHA != candidate.HeadSHA {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch ownership changed after scan"})
+			continue
+		}
+
 		branch, err := api.GetBranch(ctx, repository, candidate.Branch)
 		if err != nil {
 			var apiErr *githubapi.APIError
