@@ -28,8 +28,14 @@ func TestTokenFromEnvironmentUsesHostScopedFamilies(t *testing.T) {
 			want:        "github-token",
 		},
 		{
+			name:              "public host ignores enterprise token family",
+			host:              "github.com",
+			ghEnterpriseToken: "enterprise-token",
+			want:              "",
+		},
+		{
 			name:              "ghe dot com subdomain uses public token family",
-			host:              "Tenant.GHE.com",
+			host:              " Tenant.GHE.com ",
 			ghToken:           "gh-token",
 			ghEnterpriseToken: "enterprise-token",
 			want:              "gh-token",
@@ -76,7 +82,7 @@ func TestAPIBaseURLUsesHostScopedEndpoints(t *testing.T) {
 		want string
 	}{
 		{host: "github.com", want: "https://api.github.com"},
-		{host: "Tenant.GHE.com", want: "https://api.tenant.ghe.com"},
+		{host: " Tenant.GHE.com ", want: "https://api.tenant.ghe.com"},
 		{host: "github.example.com", want: "https://github.example.com/api/v3"},
 	}
 
