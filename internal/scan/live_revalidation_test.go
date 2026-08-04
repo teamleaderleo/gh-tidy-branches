@@ -80,7 +80,7 @@ func TestApplyRecordsRefreshFailureAndContinues(t *testing.T) {
 			{FullName: "owner/repo", DefaultBranch: "main"},
 			{FullName: "owner/repo", DefaultBranch: "main"},
 		},
-		openPulls:     [][]githubapi.PullRequest{nil, nil, nil},
+		openPulls:      [][]githubapi.PullRequest{nil, nil, nil},
 		openPullErrors: map[int]error{2: refreshErr},
 		branches: map[string]githubapi.Branch{
 			"first":  branch("first", "first-sha"),
@@ -110,11 +110,11 @@ func TestApplyRecordsRefreshFailureAndContinues(t *testing.T) {
 }
 
 type liveRevalidationAPI struct {
-	repositories   []githubapi.Repository
-	openPulls      [][]githubapi.PullRequest
-	openPullErrors map[int]error
-	branches       map[string]githubapi.Branch
-	deleted        []string
+	repositories    []githubapi.Repository
+	openPulls       [][]githubapi.PullRequest
+	openPullErrors  map[int]error
+	branches        map[string]githubapi.Branch
+	deleted         []string
 	repositoryCalls int
 	openPullCalls   int
 }
