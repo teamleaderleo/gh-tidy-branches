@@ -96,7 +96,8 @@ func pull(number int, head, sha, base, headRepo string, mergedAt *time.Time) git
 	return value
 }
 
-func TestApplyRevalidatesDefaultProtectedOpenAndAdvancedBranches(t *testing.T) {
+func TestApplyRevalidatesDefaultProtectedOpenAdvancedAndOwnership(t *testing.T) {
+	mergedAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
 	api := &fakeAPI{
 		repository: githubapi.Repository{FullName: "owner/repo", DefaultBranch: "new-default"},
 		branches: map[string]githubapi.Branch{
@@ -108,15 +109,21 @@ func TestApplyRevalidatesDefaultProtectedOpenAndAdvancedBranches(t *testing.T) {
 		openPRs: []githubapi.PullRequest{
 			pull(9, "open", "open-sha", "main", "owner/repo", nil),
 		},
+		closedPRs: []githubapi.PullRequest{
+			pull(1, "new-default", "default-sha", "new-default", "owner/repo", &mergedAt),
+			pull(2, "protected", "protected-sha", "new-default", "owner/repo", &mergedAt),
+			pull(3, "open", "open-sha", "new-default", "owner/repo", &mergedAt),
+			pull(4, "advanced", "old-sha", "new-default", "owner/repo", &mergedAt),
+			pull(5, "delete", "delete-sha", "new-default", "owner/repo", &mergedAt),
+		},
 	}
 
-	mergedAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
 	candidates := []Candidate{
-		{Repository: "owner/repo", Branch: "new-default", HeadSHA: "default-sha", MergedAt: mergedAt},
-		{Repository: "owner/repo", Branch: "protected", HeadSHA: "protected-sha", MergedAt: mergedAt},
-		{Repository: "owner/repo", Branch: "open", HeadSHA: "open-sha", MergedAt: mergedAt},
-		{Repository: "owner/repo", Branch: "advanced", HeadSHA: "old-sha", MergedAt: mergedAt},
-		{Repository: "owner/repo", Branch: "delete", HeadSHA: "delete-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "new-default", PullRequest: 1, HeadSHA: "default-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "protected", PullRequest: 2, HeadSHA: "protected-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "open", PullRequest: 3, HeadSHA: "open-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "advanced", PullRequest: 4, HeadSHA: "old-sha", MergedAt: mergedAt},
+		{Repository: "owner/repo", Branch: "delete", PullRequest: 5, HeadSHA: "delete-sha", MergedAt: mergedAt},
 	}
 
 	results, err := Apply(context.Background(), api, "owner/repo", candidates, 0)
@@ -150,6 +157,7 @@ type fakeAPI struct {
 	repository githubapi.Repository
 	branches   map[string]githubapi.Branch
 	openPRs    []githubapi.PullRequest
+	closedPRs  []githubapi.PullRequest
 	deleted    []string
 }
 
@@ -174,7 +182,7 @@ func (f *fakeAPI) ListOpenPullRequests(_ context.Context, _ string) ([]githubapi
 }
 
 func (f *fakeAPI) ListClosedPullRequests(_ context.Context, _, _ string) ([]githubapi.PullRequest, error) {
-	return nil, nil
+	return f.closedPRs, nil
 }
 
 func (f *fakeAPI) DeleteBranch(_ context.Context, _ string, branchName string) error {
