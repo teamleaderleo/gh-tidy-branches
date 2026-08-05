@@ -137,18 +137,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 	}
 
-	var applied []scan.ApplyResult
-	for _, result := range results {
-		if len(result.Candidates) == 0 {
-			continue
-		}
-		repositoryResults, err := scan.Apply(ctx, client, result.Repository, result.Candidates, options.DeleteDelay)
-		if err != nil {
-			repositoryErrors = append(repositoryErrors, RepositoryError{Repository: result.Repository, Error: err.Error()})
-			continue
-		}
-		applied = append(applied, repositoryResults...)
-	}
+	applied, applyErrors := applyScanResults(ctx, client, results, options.DeleteDelay)
+	repositoryErrors = append(repositoryErrors, applyErrors...)
 	output.ApplyResults = applied
 	output.Errors = repositoryErrors
 	output.RequestStats = client.SnapshotStats()
@@ -357,6 +347,22 @@ func scanRepositories(ctx context.Context, client *githubapi.Client, repositorie
 		results = append(results, item.result)
 	}
 	return results, repositoryErrors
+}
+
+func applyScanResults(ctx context.Context, api scan.API, results []scan.Result, delay time.Duration) ([]scan.ApplyResult, []RepositoryError) {
+	var applied []scan.ApplyResult
+	var repositoryErrors []RepositoryError
+	for _, result := range results {
+		if len(result.Candidates) == 0 {
+			continue
+		}
+		repositoryResults, err := scan.Apply(ctx, api, result.Repository, result.Candidates, delay)
+		applied = append(applied, repositoryResults...)
+		if err != nil {
+			repositoryErrors = append(repositoryErrors, RepositoryError{Repository: result.Repository, Error: err.Error()})
+		}
+	}
+	return applied, repositoryErrors
 }
 
 func errorIfRepositoryFailures(repositoryErrors []RepositoryError) error {
