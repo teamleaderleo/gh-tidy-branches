@@ -81,12 +81,10 @@ func runUndo(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	} else {
 		_, receiptErr = receipt.Write(remaining)
 	}
-	if err := errors.Join(restoreErr, receiptErr); err != nil {
-		return err
-	}
+	outcomeErr := errors.Join(restoreErr, receiptErr, errorIfRestoreFailures(results))
 	output := UndoOutput{SchemaVersion: "tidy-branches.undo-result.v1", Receipt: path, Results: results, RequestStats: client.SnapshotStats()}
 	if jsonOutput {
-		return writeJSON(stdout, output)
+		return writeJSONWithOutcome(stdout, output, outcomeErr)
 	}
 	fmt.Fprintln(stdout, "\n"+style.bold("Undo results"))
 	for _, result := range results {
@@ -106,12 +104,14 @@ func runUndo(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		}
 		fmt.Fprintln(stdout)
 	}
-	if len(remaining) == 0 {
+	if receiptErr != nil {
+		fmt.Fprintf(stderr, "WARNING: undo receipt could not be reconciled: %v\n", receiptErr)
+	} else if len(remaining) == 0 {
 		fmt.Fprintln(stdout, style.green("✓ Undo receipt cleared."))
 	} else {
 		fmt.Fprintf(stderr, "%d item(s) remain in the undo receipt because they could not be safely restored.\n", len(remaining))
 	}
-	return nil
+	return outcomeErr
 }
 
 func parseUndo(args []string) (bool, bool, error) {
@@ -127,6 +127,19 @@ func parseUndo(args []string) (bool, bool, error) {
 		}
 	}
 	return yes, jsonOutput, nil
+}
+
+func errorIfRestoreFailures(results []scan.RestoreResult) error {
+	failed := 0
+	for _, result := range results {
+		if result.Status == scan.StatusRestoreFailed {
+			failed++
+		}
+	}
+	if failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d branch restoration(s) failed", failed)
 }
 
 func remainingReceiptEntries(entries []receipt.Entry, results []scan.RestoreResult) []receipt.Entry {
