@@ -155,11 +155,12 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	output.ElapsedMilliseconds = time.Since(started).Milliseconds()
 
+	outcomeErr := errors.Join(
+		errorIfRepositoryFailures(repositoryErrors),
+		errorIfApplyFailures(applied),
+	)
 	if options.JSON {
-		if err := writeJSON(stdout, output); err != nil {
-			return err
-		}
-		return errorIfRepositoryFailures(repositoryErrors)
+		return writeJSONWithOutcome(stdout, output, outcomeErr)
 	}
 	printApplyResults(stdout, applied)
 	if output.UndoReceipt != "" {
@@ -167,7 +168,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintln(stdout, "Restore the deleted branches with: gh tidy-branches undo")
 	}
 	fmt.Fprintf(stdout, "Completed in %s. API requests: %d; retries: %d.\n", formatDuration(time.Duration(output.ElapsedMilliseconds)*time.Millisecond), output.RequestStats.Requests, output.RequestStats.Retries)
-	return errorIfRepositoryFailures(repositoryErrors)
+	return outcomeErr
 }
 
 func parse(args []string) (Options, error) {
@@ -370,6 +371,23 @@ func errorIfRepositoryFailures(repositoryErrors []RepositoryError) error {
 		return nil
 	}
 	return fmt.Errorf("%d repository scan or apply operation(s) failed", len(repositoryErrors))
+}
+
+func errorIfApplyFailures(results []scan.ApplyResult) error {
+	failed := 0
+	for _, result := range results {
+		if result.Status == scan.StatusFailed {
+			failed++
+		}
+	}
+	if failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d branch deletion(s) failed", failed)
+}
+
+func writeJSONWithOutcome(writer io.Writer, value any, outcomeErr error) error {
+	return errors.Join(writeJSON(writer, value), outcomeErr)
 }
 
 func unique(values []string) []string {
