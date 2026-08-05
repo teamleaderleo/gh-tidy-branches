@@ -177,34 +177,37 @@ func latestClosedPullRequest(
 }
 
 func Apply(ctx context.Context, api API, repository string, candidates []Candidate, delay time.Duration) ([]ApplyResult, error) {
-	repositoryState, err := api.GetRepository(ctx, repository)
-	if err != nil {
-		return nil, err
-	}
-	openPRs, err := api.ListOpenPullRequests(ctx, repository)
-	if err != nil {
-		return nil, err
-	}
-	protected := openProtection(repository, openPRs)
 	results := make([]ApplyResult, 0, len(candidates))
-	deleteAttempts := 0
+	needsDelay := false
 	for _, candidate := range candidates {
 		if candidate.Repository != repository {
 			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "candidate repository mismatch"})
+			continue
+		}
+		if needsDelay && delay > 0 {
+			if err := wait(ctx, delay); err != nil {
+				return results, err
+			}
+		}
+
+		repositoryState, err := api.GetRepository(ctx, repository)
+		if err != nil {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
 			continue
 		}
 		if candidate.Branch == repositoryState.DefaultBranch {
 			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch is now the default branch"})
 			continue
 		}
-		if _, exists := protected[candidate.Branch]; exists {
-			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch is now used by an open pull request"})
+
+		openPRs, err := api.ListOpenPullRequests(ctx, repository)
+		if err != nil {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
 			continue
 		}
-		if deleteAttempts > 0 && delay > 0 {
-			if err := wait(ctx, delay); err != nil {
-				return results, err
-			}
+		if _, exists := openProtection(repository, openPRs)[candidate.Branch]; exists {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch is now used by an open pull request"})
+			continue
 		}
 
 		closedPRs, err := api.ListClosedPullRequestsForHead(ctx, repository, candidate.Branch)
@@ -236,7 +239,8 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch advanced after scan"})
 			continue
 		}
-		deleteAttempts++
+
+		needsDelay = true
 		if err := api.DeleteBranch(ctx, repository, candidate.Branch); err != nil {
 			results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
 			continue
