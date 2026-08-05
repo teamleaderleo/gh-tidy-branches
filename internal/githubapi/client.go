@@ -181,7 +181,11 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, fullName string) ([]P
 }
 
 func (c *Client) ListClosedPullRequests(ctx context.Context, fullName, base string) ([]PullRequest, error) {
-	return c.listPullRequests(ctx, fullName, url.Values{"state": {"closed"}, "base": {base}, "sort": {"updated"}, "direction": {"desc"}})
+	query := url.Values{"state": {"closed"}, "sort": {"updated"}, "direction": {"desc"}}
+	if strings.TrimSpace(base) != "" {
+		query.Set("base", base)
+	}
+	return c.listPullRequests(ctx, fullName, query)
 }
 
 func (c *Client) listPullRequests(ctx context.Context, fullName string, query url.Values) ([]PullRequest, error) {

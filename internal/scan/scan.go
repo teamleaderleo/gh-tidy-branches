@@ -16,7 +16,8 @@ type API interface {
 	ListBranches(context.Context, string) ([]githubapi.Branch, error)
 	GetBranch(context.Context, string, string) (githubapi.Branch, error)
 	ListOpenPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
-	ListClosedPullRequests(context.Context, string, string) ([]githubapi.PullRequest, error)
+	ListAllClosedPullRequests(context.Context, string) ([]githubapi.PullRequest, error)
+	ListClosedPullRequestsForHead(context.Context, string, string) ([]githubapi.PullRequest, error)
 	DeleteBranch(context.Context, string, string) error
 }
 
@@ -95,10 +96,7 @@ func Repository(ctx context.Context, api API, fullName string) (Result, error) {
 	wg.Add(3)
 	go func() { defer wg.Done(); branches, errs[0] = api.ListBranches(ctx, fullName) }()
 	go func() { defer wg.Done(); openPRs, errs[1] = api.ListOpenPullRequests(ctx, fullName) }()
-	go func() {
-		defer wg.Done()
-		closed, errs[2] = api.ListClosedPullRequests(ctx, fullName, repository.DefaultBranch)
-	}()
+	go func() { defer wg.Done(); closed, errs[2] = api.ListAllClosedPullRequests(ctx, fullName) }()
 	wg.Wait()
 	for _, scanErr := range errs {
 		if scanErr != nil {
@@ -123,18 +121,21 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 		}
 		protectedByOpenPR[pull.Base.Ref] = struct{}{}
 	}
-	latestMerged := make(map[string]githubapi.PullRequest)
+	latestClosed := make(map[string]githubapi.PullRequest)
 	for _, pull := range closedPRs {
-		if pull.MergedAt == nil || pull.Base.Ref != repository.DefaultBranch || pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
+		if pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
 			continue
 		}
-		existing, found := latestMerged[pull.Head.Ref]
-		if !found || existing.MergedAt.Before(*pull.MergedAt) {
-			latestMerged[pull.Head.Ref] = pull
+		existing, found := latestClosed[pull.Head.Ref]
+		if !found || pull.Number > existing.Number {
+			latestClosed[pull.Head.Ref] = pull
 		}
 	}
 	candidates := make([]Candidate, 0)
-	for branchName, pull := range latestMerged {
+	for branchName, pull := range latestClosed {
+		if pull.MergedAt == nil || pull.Base.Ref != repository.DefaultBranch {
+			continue
+		}
 		if branchName == repository.DefaultBranch {
 			continue
 		}
@@ -154,6 +155,25 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 		return candidates[i].MergedAt.After(candidates[j].MergedAt)
 	})
 	return Result{Repository: repository.FullName, DefaultBranch: repository.DefaultBranch, BranchCount: len(branches), OpenPRCount: len(openPRs), Candidates: candidates}
+}
+
+func latestClosedPullRequest(
+	repository string,
+	branchName string,
+	pulls []githubapi.PullRequest,
+) (githubapi.PullRequest, bool) {
+	var latest githubapi.PullRequest
+	found := false
+	for _, pull := range pulls {
+		if pull.Head.Ref != branchName || pull.Head.Repo == nil || pull.Head.Repo.FullName != repository {
+			continue
+		}
+		if !found || pull.Number > latest.Number {
+			latest = pull
+			found = true
+		}
+	}
+	return latest, found
 }
 
 func Apply(ctx context.Context, api API, repository string, candidates []Candidate, delay time.Duration) ([]ApplyResult, error) {
@@ -186,6 +206,18 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 				return results, err
 			}
 		}
+
+		closedPRs, err := api.ListClosedPullRequestsForHead(ctx, repository, candidate.Branch)
+		if err != nil {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
+			continue
+		}
+		latest, found := latestClosedPullRequest(repository, candidate.Branch, closedPRs)
+		if !found || latest.Number != candidate.PullRequest || latest.MergedAt == nil || latest.Base.Ref != repositoryState.DefaultBranch || latest.Head.SHA != candidate.HeadSHA {
+			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch ownership changed after scan"})
+			continue
+		}
+
 		branch, err := api.GetBranch(ctx, repository, candidate.Branch)
 		if err != nil {
 			var apiErr *githubapi.APIError
