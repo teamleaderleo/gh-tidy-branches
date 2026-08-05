@@ -73,16 +73,15 @@ func runUndo(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	if err != nil {
 		return err
 	}
-	results, err := scan.Restore(ctx, client, candidates, time.Second)
-	if err != nil {
-		return err
-	}
+	results, restoreErr := scan.Restore(ctx, client, candidates, time.Second)
 	remaining := remainingReceiptEntries(stored.Entries, results)
+	var receiptErr error
 	if len(remaining) == 0 {
-		if err := receipt.Clear(); err != nil {
-			return err
-		}
-	} else if _, err := receipt.Write(remaining); err != nil {
+		receiptErr = receipt.Clear()
+	} else {
+		_, receiptErr = receipt.Write(remaining)
+	}
+	if err := errors.Join(restoreErr, receiptErr); err != nil {
 		return err
 	}
 	output := UndoOutput{SchemaVersion: "tidy-branches.undo-result.v1", Receipt: path, Results: results, RequestStats: client.SnapshotStats()}
@@ -131,15 +130,15 @@ func parseUndo(args []string) (bool, bool, error) {
 }
 
 func remainingReceiptEntries(entries []receipt.Entry, results []scan.RestoreResult) []receipt.Entry {
-	keep := make(map[string]bool)
+	completed := make(map[string]bool)
 	for _, result := range results {
-		if result.Status == scan.StatusRestoreSkipped || result.Status == scan.StatusRestoreFailed {
-			keep[result.Candidate.Repository+"\x00"+result.Candidate.Branch] = true
+		if result.Status == scan.StatusRestored || result.Status == scan.StatusAlreadyPresent {
+			completed[result.Candidate.Repository+"\x00"+result.Candidate.Branch] = true
 		}
 	}
 	remaining := make([]receipt.Entry, 0)
 	for _, entry := range entries {
-		if keep[entry.Repository+"\x00"+entry.Branch] {
+		if !completed[entry.Repository+"\x00"+entry.Branch] {
 			remaining = append(remaining, entry)
 		}
 	}
