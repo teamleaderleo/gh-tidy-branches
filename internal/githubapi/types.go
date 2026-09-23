@@ -15,6 +15,14 @@ type Repository struct {
 		Push  bool `json:"push"`
 		Pull  bool `json:"pull"`
 	} `json:"permissions"`
+	// Parent is the repository this one was forked from, or nil when it is not a fork.
+	Parent *RepositoryRef `json:"parent"`
+}
+
+// RepositoryRef is the part of a related repository that scanning needs.
+type RepositoryRef struct {
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
 }
 
 type Branch struct {

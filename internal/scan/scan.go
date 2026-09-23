@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,11 @@ type API interface {
 	DeleteBranch(context.Context, string, string) error
 }
 
+// ForkAPI is the extra lookup Apply needs to revalidate a fork branch against its parent.
+type ForkAPI interface {
+	ListClosedPullRequestsForForkHead(context.Context, string, string, string) ([]githubapi.PullRequest, error)
+}
+
 type RestoreAPI interface {
 	GetBranch(context.Context, string, string) (githubapi.Branch, error)
 	CreateBranch(context.Context, string, string, string) error
@@ -32,6 +38,9 @@ type Candidate struct {
 	PullRequest int       `json:"pull_request"`
 	HeadSHA     string    `json:"head_sha"`
 	MergedAt    time.Time `json:"merged_at"`
+	// PullRequestRepository names the parent repository when the merged pull request lives
+	// there rather than in Repository. Empty means Repository itself.
+	PullRequestRepository string `json:"pull_request_repository,omitempty"`
 }
 
 type Result struct {
@@ -104,7 +113,27 @@ func Repository(ctx context.Context, api API, fullName string) (Result, error) {
 		}
 	}
 
-	result := Evaluate(repository, branches, openPRs, closed)
+	var upstreamOpen, upstreamClosed []githubapi.PullRequest
+	if repository.Parent != nil {
+		var upstreamErrs [2]error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			upstreamOpen, upstreamErrs[0] = api.ListOpenPullRequests(ctx, repository.Parent.FullName)
+		}()
+		go func() {
+			defer wg.Done()
+			upstreamClosed, upstreamErrs[1] = api.ListAllClosedPullRequests(ctx, repository.Parent.FullName)
+		}()
+		wg.Wait()
+		for _, scanErr := range upstreamErrs {
+			if scanErr != nil {
+				return Result{}, scanErr
+			}
+		}
+	}
+
+	result := EvaluateFork(repository, branches, openPRs, closed, upstreamOpen, upstreamClosed)
 	result.ElapsedMilliseconds = time.Since(started).Milliseconds()
 	return result, nil
 }
@@ -148,13 +177,97 @@ func Evaluate(repository githubapi.Repository, branches []githubapi.Branch, open
 		}
 		candidates = append(candidates, Candidate{Repository: repository.FullName, Branch: branchName, PullRequest: pull.Number, HeadSHA: pull.Head.SHA, MergedAt: *pull.MergedAt})
 	}
+	sortCandidates(candidates)
+	return Result{Repository: repository.FullName, DefaultBranch: repository.DefaultBranch, BranchCount: len(branches), OpenPRCount: len(openPRs), Candidates: candidates}
+}
+
+// EvaluateFork extends Evaluate to a fork whose pull requests are opened against its parent.
+//
+// A branch becomes a candidate when its latest parent pull request from this fork merged into
+// the parent's default branch at the branch's current SHA. An open parent pull request from this
+// fork protects its head. A branch with closed pull requests in both repositories is skipped:
+// numbers from two repositories cannot be ordered, so neither history can be trusted as latest.
+func EvaluateFork(
+	repository githubapi.Repository,
+	branches []githubapi.Branch,
+	openPRs, closedPRs, upstreamOpen, upstreamClosed []githubapi.PullRequest,
+) Result {
+	result := Evaluate(repository, branches, openPRs, closedPRs)
+	if repository.Parent == nil {
+		return result
+	}
+	upstream := *repository.Parent
+
+	protected := openProtection(repository.FullName, openPRs)
+	for _, pull := range upstreamOpen {
+		if pull.Head.Repo != nil && pull.Head.Repo.FullName == repository.FullName {
+			protected[pull.Head.Ref] = struct{}{}
+		}
+	}
+	ownHistory := make(map[string]struct{})
+	for _, pull := range closedPRs {
+		if pull.Head.Repo != nil && pull.Head.Repo.FullName == repository.FullName {
+			ownHistory[pull.Head.Ref] = struct{}{}
+		}
+	}
+	latestUpstream := make(map[string]githubapi.PullRequest)
+	for _, pull := range upstreamClosed {
+		if pull.Head.Repo == nil || pull.Head.Repo.FullName != repository.FullName {
+			continue
+		}
+		existing, found := latestUpstream[pull.Head.Ref]
+		if !found || pull.Number > existing.Number {
+			latestUpstream[pull.Head.Ref] = pull
+		}
+	}
+
+	candidates := make([]Candidate, 0, len(result.Candidates))
+	for _, candidate := range result.Candidates {
+		_, open := protected[candidate.Branch]
+		_, ambiguous := latestUpstream[candidate.Branch]
+		if !open && !ambiguous {
+			candidates = append(candidates, candidate)
+		}
+	}
+	current := make(map[string]githubapi.Branch, len(branches))
+	for _, branch := range branches {
+		current[branch.Name] = branch
+	}
+	for branchName, pull := range latestUpstream {
+		if pull.MergedAt == nil || pull.Base.Ref != upstream.DefaultBranch || branchName == repository.DefaultBranch {
+			continue
+		}
+		if _, open := protected[branchName]; open {
+			continue
+		}
+		if _, ambiguous := ownHistory[branchName]; ambiguous {
+			continue
+		}
+		branch, exists := current[branchName]
+		if !exists || branch.Protected || branch.SHA() == "" || branch.SHA() != pull.Head.SHA {
+			continue
+		}
+		candidates = append(candidates, Candidate{
+			Repository:            repository.FullName,
+			Branch:                branchName,
+			PullRequest:           pull.Number,
+			HeadSHA:               pull.Head.SHA,
+			MergedAt:              *pull.MergedAt,
+			PullRequestRepository: upstream.FullName,
+		})
+	}
+	sortCandidates(candidates)
+	result.Candidates = candidates
+	return result
+}
+
+func sortCandidates(candidates []Candidate) {
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].MergedAt.Equal(candidates[j].MergedAt) {
 			return candidates[i].Branch < candidates[j].Branch
 		}
 		return candidates[i].MergedAt.After(candidates[j].MergedAt)
 	})
-	return Result{Repository: repository.FullName, DefaultBranch: repository.DefaultBranch, BranchCount: len(branches), OpenPRCount: len(openPRs), Candidates: candidates}
 }
 
 func latestClosedPullRequest(
@@ -215,10 +328,23 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 			results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
 			continue
 		}
-		latest, found := latestClosedPullRequest(repository, candidate.Branch, closedPRs)
-		if !found || latest.Number != candidate.PullRequest || latest.MergedAt == nil || latest.Base.Ref != repositoryState.DefaultBranch || latest.Head.SHA != candidate.HeadSHA {
-			results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch ownership changed after scan"})
-			continue
+		if repositoryState.Parent != nil || candidate.PullRequestRepository != "" {
+			skip, reason, err := revalidateFork(ctx, api, repositoryState, candidate, closedPRs)
+			if err != nil {
+				results = append(results, ApplyResult{Candidate: candidate, Status: StatusFailed, Reason: err.Error()})
+				continue
+			}
+			if skip {
+				results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: reason})
+				continue
+			}
+		}
+		if candidate.PullRequestRepository == "" {
+			latest, found := latestClosedPullRequest(repository, candidate.Branch, closedPRs)
+			if !found || latest.Number != candidate.PullRequest || latest.MergedAt == nil || latest.Base.Ref != repositoryState.DefaultBranch || latest.Head.SHA != candidate.HeadSHA {
+				results = append(results, ApplyResult{Candidate: candidate, Status: StatusSkipped, Reason: "branch ownership changed after scan"})
+				continue
+			}
 		}
 
 		branch, err := api.GetBranch(ctx, repository, candidate.Branch)
@@ -248,6 +374,58 @@ func Apply(ctx context.Context, api API, repository string, candidates []Candida
 		results = append(results, ApplyResult{Candidate: candidate, Status: StatusDeleted})
 	}
 	return results, nil
+}
+
+// revalidateFork re-reads the parent's pull requests for one fork branch immediately before
+// deletion. It returns skip=true with a reason when the branch is no longer safe to delete.
+func revalidateFork(
+	ctx context.Context,
+	api API,
+	repositoryState githubapi.Repository,
+	candidate Candidate,
+	ownClosed []githubapi.PullRequest,
+) (bool, string, error) {
+	if repositoryState.Parent == nil {
+		return true, "repository is no longer a fork", nil
+	}
+	upstream := *repositoryState.Parent
+	if candidate.PullRequestRepository != "" && candidate.PullRequestRepository != upstream.FullName {
+		return true, "fork parent changed after scan", nil
+	}
+	forkAPI, ok := api.(ForkAPI)
+	if !ok {
+		return false, "", errors.New("cannot revalidate parent pull requests for a fork branch")
+	}
+	upstreamOpen, err := api.ListOpenPullRequests(ctx, upstream.FullName)
+	if err != nil {
+		return false, "", err
+	}
+	for _, pull := range upstreamOpen {
+		if pull.Head.Repo != nil && pull.Head.Repo.FullName == repositoryState.FullName && pull.Head.Ref == candidate.Branch {
+			return true, "branch is now used by an open parent pull request", nil
+		}
+	}
+	owner, _, found := strings.Cut(repositoryState.FullName, "/")
+	if !found {
+		return false, "", fmt.Errorf("invalid repository name %q", repositoryState.FullName)
+	}
+	upstreamClosed, err := forkAPI.ListClosedPullRequestsForForkHead(ctx, upstream.FullName, owner, candidate.Branch)
+	if err != nil {
+		return false, "", err
+	}
+	latestUpstream, upstreamFound := latestClosedPullRequest(repositoryState.FullName, candidate.Branch, upstreamClosed)
+	_, ownFound := latestClosedPullRequest(repositoryState.FullName, candidate.Branch, ownClosed)
+	if candidate.PullRequestRepository == "" {
+		if upstreamFound {
+			return true, "branch ownership changed after scan", nil
+		}
+		return false, "", nil
+	}
+	if ownFound || !upstreamFound || latestUpstream.Number != candidate.PullRequest || latestUpstream.MergedAt == nil ||
+		latestUpstream.Base.Ref != upstream.DefaultBranch || latestUpstream.Head.SHA != candidate.HeadSHA {
+		return true, "branch ownership changed after scan", nil
+	}
+	return false, "", nil
 }
 
 func Restore(ctx context.Context, api RestoreAPI, candidates []RestoreCandidate, delay time.Duration) ([]RestoreResult, error) {
