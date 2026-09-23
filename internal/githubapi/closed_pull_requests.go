@@ -32,9 +32,23 @@ func (c *Client) ListClosedPullRequestsForHead(
 	if err != nil {
 		return nil, err
 	}
+	return c.ListClosedPullRequestsForForkHead(ctx, fullName, owner, branch)
+}
+
+// ListClosedPullRequestsForForkHead returns closed pull requests in fullName whose head is
+// headOwner:branch. For a fork, fullName is the parent and headOwner owns the fork.
+func (c *Client) ListClosedPullRequestsForForkHead(
+	ctx context.Context,
+	fullName string,
+	headOwner string,
+	branch string,
+) ([]PullRequest, error) {
+	if _, _, err := splitRepository(fullName); err != nil {
+		return nil, err
+	}
 	return c.listPullRequests(ctx, fullName, url.Values{
 		"state":     {"closed"},
-		"head":      {owner + ":" + branch},
+		"head":      {headOwner + ":" + branch},
 		"sort":      {"created"},
 		"direction": {"desc"},
 	})
